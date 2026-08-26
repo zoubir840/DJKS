@@ -1,3 +1,4 @@
+/* Thème sombre (par défaut — cohérent avec l'esthétique Discord) */
 :root {
   --bg: #0f1117;
   --bg-elevated: #171a23;
@@ -10,7 +11,24 @@
   --green: #23a55a;
   --red: #f23f42;
   --yellow: #f0b232;
+  --tint: rgba(255, 255, 255, 0.08);
   --radius: 12px;
+}
+
+/* Thème clair — activé en posant data-theme="light" sur <html> (voir theme.js) */
+:root[data-theme="light"] {
+  --bg: #f4f5f9;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --border: #e0e2ea;
+  --text: #171a23;
+  --text-dim: #62677a;
+  --blurple: #5865f2;
+  --blurple-hover: #4752c4;
+  --green: #1b8a4c;
+  --red: #d6323f;
+  --yellow: #a8710a;
+  --tint: rgba(15, 17, 23, 0.06);
 }
 
 * { box-sizing: border-box; }
@@ -27,7 +45,7 @@ html, body {
 a { color: inherit; text-decoration: none; }
 
 code {
-  background: rgba(255,255,255,0.08);
+  background: var(--tint);
   padding: 0.1em 0.4em;
   border-radius: 4px;
   font-size: 0.9em;
@@ -47,6 +65,21 @@ code {
 .topnav { display: flex; align-items: center; gap: 20px; }
 .topnav a:hover { color: var(--blurple); }
 .topnav-user { color: var(--text-dim); font-size: 0.9rem; }
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+}
+.icon-btn:hover { border-color: var(--blurple); }
 .inline-form { display: inline; margin: 0; }
 
 /* Buttons */
@@ -246,7 +279,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .command-badge-prefix { background: rgba(88,101,242,0.18); color: #b5bcff; }
 .command-badge-slash { background: rgba(35,165,90,0.18); color: #7ee2a8; }
 .command-badge-embed { background: rgba(240,178,50,0.18); color: var(--yellow); margin-left: 6px; }
-.command-badge-cooldown { background: rgba(255,255,255,0.08); color: var(--text-dim); margin-left: 6px; }
+.command-badge-cooldown { background: var(--tint); color: var(--text-dim); margin-left: 6px; }
 .command-desc { color: var(--text-dim); font-size: 0.85rem; margin-left: 8px; }
 .command-response { margin: 6px 0 0; font-size: 0.88rem; color: var(--text-dim); white-space: pre-wrap; }
 .command-uses { margin: 6px 0 0; font-size: 0.76rem; color: #5b606e; }
@@ -311,6 +344,24 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .role-chip-remove:hover { color: var(--red); }
 .role-option-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .role-option-form input { width: auto; flex: 1; min-width: 120px; margin-top: 0; }
+
+/* Admin */
+.table-wrap { overflow-x: auto; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.admin-table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table-actions { display: flex; gap: 8px; white-space: nowrap; }
+.row-suspended { opacity: 0.55; }
 
 /* Logs */
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.4s infinite; }

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Administration' }) %></head>
+<body>
+  <%- include('partials/nav', { user: null }) %>
+  <main class="page">
+    <div class="page-header">
+      <h1>🛠️ Administration</h1>
+      <form action="/admin/logout" method="post" class="inline-form">
+        <%- include('partials/csrf') %>
+        <button type="submit" class="btn btn-ghost btn-sm">Quitter l'admin</button>
+      </form>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <div class="stat-row">
+      <div class="stat-tile"><span class="stat-value"><%= stats.userCount %></span><span class="stat-label">Comptes</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= stats.botCount %></span><span class="stat-label">Bots</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= stats.botsOnline %></span><span class="stat-label">Bots en ligne</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= stats.commandCount %></span><span class="stat-label">Commandes</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= stats.totalCommandsRun %></span><span class="stat-label">Exécutions totales</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= stats.aiUsageToday %></span><span class="stat-label">Messages IA aujourd'hui</span></div>
+    </div>
+
+    <section class="card">
+      <div class="card-header"><h2>Serveur</h2></div>
+      <p class="hint" style="margin-top:0;">
+        Node <%= system.nodeVersion %> · IA : <strong><%= system.aiProvider || 'non configurée' %></strong> ·
+        en ligne depuis <%= system.uptime %> · mémoire utilisée <%= system.memoryMb %> Mo
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><h2>Comptes (<%= users.length %>)</h2></div>
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Email</th><th>Bots</th><th>Inscrit le</th><th>Statut</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% users.forEach(u => { %>
+              <tr class="<%= u.is_suspended ? 'row-suspended' : '' %>">
+                <td><%= u.email %></td>
+                <td><%= u.bot_count %></td>
+                <td><%= new Date(u.created_at).toLocaleDateString('fr-FR') %></td>
+                <td><%= u.is_suspended ? '🚫 Suspendu' : '✅ Actif' %></td>
+                <td class="admin-table-actions">
+                  <form method="post" action="/admin/users/<%= u.id %>/suspend" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <input type="hidden" name="suspended" value="<%= u.is_suspended ? '0' : '1' %>" />
+                    <button type="submit" class="btn btn-ghost btn-sm"><%= u.is_suspended ? 'Réactiver' : 'Suspendre' %></button>
+                  </form>
+                  <form method="post" action="/admin/users/<%= u.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer définitivement ce compte, ses bots et ses commandes ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+            <% if (!users.length) { %><tr><td colspan="5" class="hint">Aucun compte pour l'instant.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><h2>Bots (<%= bots.length %>)</h2></div>
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Nom</th><th>Propriétaire</th><th>Statut</th><th>Serveurs</th><th>Commandes</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% bots.forEach(b => { %>
+              <tr>
+                <td><%= b.name %> <span class="hint">@<%= b.username || '?' %></span></td>
+                <td><%= b.owner_email %></td>
+                <td><span class="status-dot status-<%= b.status %>"></span> <%= statusLabels[b.status] || b.status %></td>
+                <td><%= b.guildCount %></td>
+                <td><%= b.command_count %></td>
+                <td class="admin-table-actions">
+                  <form method="post" action="/admin/bots/<%= b.id %>/stop" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm" <%= b.status === 'stopped' ? 'disabled' : '' %>>Arrêter</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+            <% if (!bots.length) { %><tr><td colspan="6" class="hint">Aucun bot pour l'instant.</td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

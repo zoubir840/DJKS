@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Administration' }) %></head>
+<body>
+  <%- include('partials/nav', { user: null }) %>
+  <main class="auth-wrap">
+    <form class="card auth-card" method="post" action="/admin/login">
+      <%- include('partials/csrf') %>
+      <h1>🛠️ Administration</h1>
+      <%- include('partials/flash', { flash }) %>
+      <label>Code d'accès
+        <input type="password" name="code" required autofocus inputmode="numeric" />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Entrer</button>
+    </form>
+  </main>
+</body>
+</html>

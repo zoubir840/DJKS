@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  is_suspended INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -107,6 +108,7 @@ function ensureColumn(table, column, definition) {
   }
 }
 
+ensureColumn('users', 'is_suspended', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('bots', 'username', 'TEXT');
 ensureColumn('bots', 'avatar_url', 'TEXT');
 ensureColumn('bots', 'autostart', 'INTEGER NOT NULL DEFAULT 0');

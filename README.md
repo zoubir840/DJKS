@@ -15,6 +15,8 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - ⚙️ Page « Mon compte » : changement de mot de passe, suppression de compte
 - 🔑 Tokens Discord chiffrés en base (AES-256-GCM), jamais réaffichés en clair
 - ✅ Validation du token auprès de l'API Discord dès l'ajout du bot (avant même de le démarrer)
+- 🌗 Thème clair / sombre, mémorisé par navigateur (icône en haut de page)
+- 🛠️ **Panneau d'administration** protégé par un code d'accès (voir plus bas) : vue sur tous les comptes et bots, suspension/suppression de compte, arrêt d'un bot à distance, statistiques globales du serveur
 
 ### Gestion des bots
 - 🤖 Plusieurs bots Discord par compte, avec avatar et pseudo Discord affichés
@@ -161,21 +163,44 @@ déclencheur, quota quotidien) et/ou utilise le **générateur de commandes
 IA** au-dessus du formulaire de création de commande. Le fournisseur actif
 est affiché directement dans cette section.
 
+## Panneau d'administration (optionnel)
+
+Une section `/admin` (icône 🛠️ en haut de chaque page) donne une vue sur
+**tout le site**, indépendamment des comptes utilisateurs : nombre de
+comptes et de bots, bots en ligne, commandes exécutées, usage de l'IA,
+version de Node et mémoire utilisée — plus la liste de tous les comptes
+(suspendre/réactiver/supprimer) et de tous les bots (arrêt à distance).
+
+Désactivée par défaut (page 404). Pour l'activer, ajoute dans `.env` :
+
+```
+ADMIN_CODE=ton-code-ici
+```
+
+puis redémarre le site. Les tentatives de connexion à `/admin` sont
+limitées à 8 par 15 minutes pour freiner le brute-force, mais **un code
+court (ex. "123") reste rapide à deviner** même avec cette limite — préfère
+au moins 6-8 caractères pour un déploiement réellement exposé sur
+Internet. Ce code n'est lié à aucun compte : quiconque le connaît a accès
+à l'administration, garde-le aussi confidentiel qu'un mot de passe.
+
 ## Architecture
 
 ```
-server.js               Point d'entrée Express : routes, sessions, CSRF, SSE
+server.js               Point d'entrée Express : routes, sessions, CSRF, SSE, admin
 src/ensureEnv.js          Génère .env automatiquement au premier lancement s'il est absent
 src/db.js                  Base SQLite (better-sqlite3) + schéma + migrations légères
 src/crypto.js                Chiffrement AES-256-GCM des tokens
 src/csrf.js                   Protection CSRF (jeton par session)
-src/auth.js                    Middlewares d'authentification
-src/ai.js                       Intégration Claude (chat assistant + générateur de commandes)
-src/botManager.js                 Cycle de vie des instances discord.js : démarrage/arrêt,
-                                    commandes, modération, IA, menus de rôles, bienvenue/
-                                    départ/rôle auto, anti-spam, logs, invitation
-views/*.ejs                        Pages du site (EJS + CSS fait main, thème sombre)
-public/                              CSS / JS statiques (dont le client SSE des logs)
+src/auth.js                    Middlewares d'authentification des comptes
+src/adminAuth.js                 Middleware d'accès au panneau d'administration (par code)
+src/ai.js                          Intégration IA : Ollama / Groq / Claude (chat + générateur)
+src/botManager.js                    Cycle de vie des instances discord.js : démarrage/arrêt,
+                                       commandes, modération, IA, menus de rôles, bienvenue/
+                                       départ/rôle auto, anti-spam, logs, invitation
+views/*.ejs                             Pages du site (EJS + CSS fait main, thèmes clair/sombre)
+public/js/theme.js, site.js               Bascule de thème (mémorisée par navigateur)
+public/                                     CSS / JS statiques (dont le client SSE des logs)
 deploy/install-vps.sh                 Installation + service systemd en une commande sur un VPS
 deploy/install-ollama.sh                IA locale 100% gratuite et sans clé (Ollama)
 deploy/Caddyfile.example                  Reverse proxy HTTPS optionnel (nom de domaine)
@@ -246,7 +271,8 @@ toi, donc `NODE_ENV=production` fonctionne directement. Dans tous les cas,
 il te faudra :
 - définir les variables d'environnement `SESSION_SECRET`, `ENCRYPTION_KEY`
   (et `GROQ_API_KEY`, gratuit, si tu veux l'IA — Ollama n'est pas adapté à
-  ce type de plateforme sans GPU/RAM dédiée),
+  ce type de plateforme sans GPU/RAM dédiée ; `ADMIN_CODE` si tu veux le
+  panneau d'administration),
 - attacher un **volume/disque persistant** sur `/app/data` (sinon la base
   SQLite — donc tes comptes et bots — repart de zéro à chaque redéploiement).
 

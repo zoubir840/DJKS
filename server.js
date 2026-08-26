@@ -17,6 +17,7 @@ const { requireAuth, attachUser } = require('./src/auth');
 const { ensureToken, verifyToken } = require('./src/csrf');
 const botManager = require('./src/botManager');
 const ai = require('./src/ai');
+const adminAuth = require('./src/adminAuth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -100,6 +101,28 @@ const aiLimiter = rateLimit({
   message: { error: 'Trop de générations IA. Réessaie dans quelques minutes.' },
 });
 
+// Code admin plus court/faible qu'un mot de passe : limite plus stricte
+// contre le brute-force.
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+});
+
+function formatUptime(seconds) {
+  const s = Math.floor(seconds);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(`${d}j`);
+  if (h) parts.push(`${h}h`);
+  parts.push(`${m}min`);
+  return parts.join(' ');
+}
+
 // --------------------------------------------------------------------------
 // Pages publiques
 // --------------------------------------------------------------------------
@@ -163,6 +186,10 @@ app.post('/login', authLimiter, async (req, res) => {
   const ok = user ? await bcrypt.compare(password || '', user.password_hash) : false;
   if (!ok) {
     req.setFlash('error', 'Email ou mot de passe incorrect.');
+    return res.redirect('/login');
+  }
+  if (user.is_suspended) {
+    req.setFlash('error', 'Ce compte a été suspendu.');
     return res.redirect('/login');
   }
   req.session.regenerate((err) => {
@@ -838,6 +865,91 @@ app.post('/bots/:id/commands/import', requireAuth, (req, res) => {
     `${imported} commande(s) importée(s) (désactivées par défaut, à vérifier avant activation)${skipped ? `, ${skipped} ignorée(s) (invalides)` : ''}.`
   );
   res.redirect(`/bots/${bot.id}`);
+});
+
+// --------------------------------------------------------------------------
+// Administration (accès par code, indépendant des comptes utilisateurs)
+// --------------------------------------------------------------------------
+
+app.get('/admin', (req, res) => {
+  if (!adminAuth.isAdminConfigured()) {
+    return res.status(404).render('error', { code: 404, title: 'Page introuvable', message: "Cette page n'existe pas." });
+  }
+  if (!req.session.isAdmin) {
+    return res.render('admin_login', { flash: res.locals.flash });
+  }
+
+  const users = db
+    .prepare(
+      `SELECT u.*, (SELECT COUNT(*) FROM bots b WHERE b.user_id = u.id) AS bot_count
+       FROM users u ORDER BY u.created_at DESC`
+    )
+    .all();
+  const botsRaw = db
+    .prepare(
+      `SELECT bo.*, u.email AS owner_email, (SELECT COUNT(*) FROM commands c WHERE c.bot_id = bo.id) AS command_count
+       FROM bots bo JOIN users u ON u.id = bo.user_id ORDER BY bo.created_at DESC`
+    )
+    .all();
+  const bots = botsRaw.map((b) => ({ ...b, guildCount: botManager.getGuilds(b.id).length }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const stats = {
+    userCount: users.length,
+    botCount: bots.length,
+    botsOnline: bots.filter((b) => b.status === 'online').length,
+    commandCount: db.prepare('SELECT COUNT(*) AS n FROM commands').get().n,
+    totalCommandsRun: db.prepare('SELECT COALESCE(SUM(total_commands_run), 0) AS n FROM bots').get().n,
+    aiUsageToday: db.prepare('SELECT COALESCE(SUM(ai_usage_count), 0) AS n FROM bots WHERE ai_usage_date = ?').get(today).n,
+  };
+  const system = {
+    nodeVersion: process.version,
+    aiProvider: ai.providerLabel(),
+    uptime: formatUptime(process.uptime()),
+    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+  };
+
+  res.render('admin_dashboard', { stats, system, users, bots, flash: res.locals.flash });
+});
+
+app.post('/admin/login', adminLoginLimiter, (req, res) => {
+  if (!adminAuth.isAdminConfigured()) return res.status(404).end();
+  if (!adminAuth.codeMatches(req.body.code)) {
+    req.setFlash('error', 'Code incorrect.');
+    return res.redirect('/admin');
+  }
+  req.session.regenerate((err) => {
+    if (err) return res.redirect('/admin');
+    req.session.isAdmin = true;
+    res.redirect('/admin');
+  });
+});
+
+app.post('/admin/logout', (req, res) => {
+  req.session.isAdmin = false;
+  res.redirect('/');
+});
+
+app.post('/admin/users/:id/suspend', adminAuth.requireAdmin, (req, res) => {
+  const suspended = req.body.suspended === '1' ? 1 : 0;
+  db.prepare('UPDATE users SET is_suspended = ? WHERE id = ?').run(suspended, req.params.id);
+  req.setFlash('success', suspended ? 'Compte suspendu.' : 'Compte réactivé.');
+  res.redirect('/admin');
+});
+
+app.post('/admin/users/:id/delete', adminAuth.requireAdmin, async (req, res) => {
+  const targetBots = db.prepare('SELECT id FROM bots WHERE user_id = ?').all(req.params.id);
+  await Promise.all(targetBots.map((b) => botManager.stop(b.id).catch(() => {})));
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  req.setFlash('success', 'Compte supprimé.');
+  res.redirect('/admin');
+});
+
+app.post('/admin/bots/:id/stop', adminAuth.requireAdmin, async (req, res) => {
+  await botManager.stop(req.params.id).catch(() => {});
+  db.prepare('UPDATE bots SET autostart = 0 WHERE id = ?').run(req.params.id);
+  req.setFlash('success', 'Bot arrêté.');
+  res.redirect('/admin');
 });
 
 // --------------------------------------------------------------------------
