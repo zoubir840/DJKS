@@ -11,6 +11,15 @@
 
     <%- include('partials/flash', { flash }) %>
 
+    <% if (bots.length) { %>
+      <div class="stat-row">
+        <div class="stat-tile"><span class="stat-value"><%= bots.length %></span><span class="stat-label">Bot(s)</span></div>
+        <div class="stat-tile"><span class="stat-value"><%= bots.filter(b => b.status === 'online').length %></span><span class="stat-label">En ligne</span></div>
+        <div class="stat-tile"><span class="stat-value"><%= bots.reduce((sum, b) => sum + b.command_count, 0) %></span><span class="stat-label">Commande(s)</span></div>
+        <div class="stat-tile"><span class="stat-value"><%= bots.reduce((sum, b) => sum + b.total_commands_run, 0) %></span><span class="stat-label">Exécutions totales</span></div>
+      </div>
+    <% } %>
+
     <% if (!bots.length) { %>
       <div class="empty-state card">
         <h2>Aucun bot pour le moment</h2>
@@ -23,6 +32,7 @@
         <% bots.forEach(bot => { %>
           <a class="card bot-card" href="/bots/<%= bot.id %>">
             <div class="bot-card-top">
+              <img class="bot-card-avatar" src="<%= bot.avatar_url || 'https://cdn.discordapp.com/embed/avatars/0.png' %>" alt="" />
               <span class="status-dot status-<%= bot.status %>"></span>
               <h3><%= bot.name %></h3>
             </div>

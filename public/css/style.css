@@ -167,6 +167,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .bot-card { display: block; cursor: pointer; transition: border-color 0.15s ease, transform 0.1s ease; }
 .bot-card:hover { border-color: var(--blurple); transform: translateY(-2px); }
 .bot-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.bot-card-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .bot-card-top h3 { margin: 0; font-size: 1.05rem; }
 .bot-card-meta { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 10px; }
 
@@ -185,9 +186,37 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 
 .bot-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
+/* Bot header */
+.bot-title-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.bot-avatar { width: 52px; height: 52px; border-radius: 50%; border: 2px solid var(--border); object-fit: cover; }
+.bot-username { color: var(--text-dim); font-size: 0.85rem; margin: 2px 0 0; }
+
+/* Stats */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.stat-tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+}
+.stat-value { display: block; font-size: 1.5rem; font-weight: 700; }
+.stat-label { display: block; color: var(--text-dim); font-size: 0.78rem; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Checkbox */
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text); }
+.checkbox-label input { width: auto; margin-top: 0; }
+
+/* Guild list */
+.guild-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.guild-item { display: flex; align-items: center; gap: 10px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.guild-item img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.guild-name { flex: 1; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guild-members { color: var(--text-dim); font-size: 0.78rem; flex-shrink: 0; }
+
 /* Bot detail layout */
 .bot-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.bot-layout .logs-card { grid-column: 1 / -1; }
+.bot-layout .logs-card, .bot-layout .command-card { grid-column: 1 / -1; }
 @media (max-width: 860px) { .bot-layout { grid-template-columns: 1fr; } }
 
 .danger-zone { display: block; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 14px; }
@@ -216,8 +245,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 }
 .command-badge-prefix { background: rgba(88,101,242,0.18); color: #b5bcff; }
 .command-badge-slash { background: rgba(35,165,90,0.18); color: #7ee2a8; }
+.command-badge-embed { background: rgba(240,178,50,0.18); color: var(--yellow); margin-left: 6px; }
+.command-badge-cooldown { background: rgba(255,255,255,0.08); color: var(--text-dim); margin-left: 6px; }
 .command-desc { color: var(--text-dim); font-size: 0.85rem; margin-left: 8px; }
 .command-response { margin: 6px 0 0; font-size: 0.88rem; color: var(--text-dim); white-space: pre-wrap; }
+.command-uses { margin: 6px 0 0; font-size: 0.76rem; color: #5b606e; }
 .command-item-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 
 /* Logs */

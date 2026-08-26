@@ -11,6 +11,7 @@
     <%- include('partials/flash', { flash }) %>
 
     <form class="card" method="post" action="/bots">
+      <%- include('partials/csrf') %>
       <label>Nom du bot (juste pour toi)
         <input type="text" name="name" required placeholder="Mon super bot" value="<%= typeof name !== 'undefined' ? name : '' %>" />
       </label>

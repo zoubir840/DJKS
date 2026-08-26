@@ -5,6 +5,7 @@
   <%- include('partials/nav', { user: null }) %>
   <main class="auth-wrap">
     <form class="card auth-card" method="post" action="/login">
+      <%- include('partials/csrf') %>
       <h1>Connexion</h1>
       <%- include('partials/flash', { flash }) %>
       <label>Email
