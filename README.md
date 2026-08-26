@@ -15,7 +15,7 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - ⚙️ Page « Mon compte » : changement de mot de passe, suppression de compte
 - 🔑 Tokens Discord chiffrés en base (AES-256-GCM), jamais réaffichés en clair
 - ✅ Validation du token auprès de l'API Discord dès l'ajout du bot (avant même de le démarrer)
-- 🌗 Thème clair / sombre, mémorisé par navigateur (icône en haut de page)
+- 🌗 Thème clair / sombre soigné (dégradés de marque, ombres, cartes qui se soulèvent au survol, fond ambiant), mémorisé par navigateur (icône en haut de page)
 - 🛠️ **Panneau d'administration** protégé par un code d'accès (voir plus bas) : vue sur tous les comptes et bots, suspension/suppression de compte, arrêt d'un bot à distance, statistiques globales du serveur
 
 ### Gestion des bots
@@ -84,28 +84,38 @@ Le site est disponible sur `http://localhost:3000`. Pour activer l'IA
 `NODE_ENV=production` dans `.env` pour activer les cookies de session
 sécurisés (HTTPS requis devant).
 
-## Lancer sur un VPS (une seule commande)
+## Lancer sur un serveur Debian/Ubuntu — TOUT en une seule commande
 
-Sur un VPS Ubuntu/Debian fraîchement cloné :
+Sur un serveur fraîchement provisionné, connecté en SSH, **sans rien cloner
+au préalable** :
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/zoubir840/DJKS/claude/discord-bot-management-site-o5vtwp/deploy/bootstrap.sh)
+```
+
+Une seule commande, et c'est fini : elle installe git si besoin, clone le
+dépôt, installe Node.js et les dépendances, génère `.env` automatiquement,
+configure le **service systemd** qui garde le site en ligne en permanence
+(redémarre seul en cas de crash ou de reboot), **et** installe l'IA locale
+gratuite (Ollama) avec un modèle déjà choisi. À la fin, elle affiche l'URL
+du site et les commandes utiles.
+
+Relance-la à tout moment sans risque (par ex. pour mettre à jour) : elle ne
+recrée rien inutilement, juste `git pull` + mise à jour des services.
+Adapte le dépôt/la branche avec les variables `DJKS_REPO_URL` /
+`DJKS_BRANCH` si tu utilises ton propre fork.
+
+### Étape par étape (si tu préfères, ou si le dépôt est déjà cloné)
 
 ```bash
 git clone <url-de-ton-fork> djks-bots && cd djks-bots
-bash deploy/install-vps.sh
+bash deploy/install-vps.sh       # le site + service systemd permanent
+bash deploy/install-ollama.sh    # l'IA locale, gratuite, sans clé (optionnel)
 ```
 
-Ce script installe Node.js si besoin, les dépendances, génère `.env`
-automatiquement, puis configure un **service systemd** qui garde le site en
-ligne en permanence (redémarre seul en cas de crash ou de reboot du
-serveur). Relance-le sans risque après un `git pull` pour mettre à jour le
-service. Une fois terminé, il affiche l'URL publique et les commandes utiles
-(`systemctl status/restart`, `journalctl -f`). Pour du HTTPS avec un nom de
-domaine, voir `deploy/Caddyfile.example`.
-
-Pour ajouter l'IA gratuite et sans clé directement sur ce même VPS :
-
-```bash
-bash deploy/install-ollama.sh
-```
+`install-vps.sh` peut être relancé sans risque après un `git pull` pour
+mettre à jour le service. Pour du HTTPS avec un nom de domaine, voir
+`deploy/Caddyfile.example`.
 
 ## Déployer via Docker (voir plus bas)
 
@@ -206,9 +216,10 @@ src/botManager.js                    Cycle de vie des instances discord.js : dé
 views/*.ejs                             Pages du site (EJS + CSS fait main, thèmes clair/sombre)
 public/js/theme.js, site.js               Bascule de thème (mémorisée par navigateur)
 public/                                     CSS / JS statiques (dont le client SSE des logs)
-deploy/install-vps.sh                 Installation + service systemd en une commande sur un VPS
-deploy/install-ollama.sh                IA locale 100% gratuite et sans clé (Ollama)
-deploy/Caddyfile.example                  Reverse proxy HTTPS optionnel (nom de domaine)
+deploy/bootstrap.sh                   Installation TOTALE en une commande (clone + site + IA locale)
+deploy/install-vps.sh                   Installation + service systemd du site seul
+deploy/install-ollama.sh                  IA locale 100% gratuite et sans clé (Ollama)
+deploy/Caddyfile.example                    Reverse proxy HTTPS optionnel (nom de domaine)
 ```
 
 Chaque bot démarré tourne comme une instance `discord.js` dans le process
