@@ -338,8 +338,23 @@
             <textarea name="response" id="command-response-input" required placeholder="Bonjour {user} ! Bienvenue sur {server} 👋" rows="2"></textarea>
           </label>
           <p class="hint">Variables : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code> — sépare plusieurs réponses par <code>|||</code> pour qu'une soit tirée au hasard.</p>
+          <div id="response-preview" class="response-preview"></div>
           <button type="submit" class="btn btn-primary">+ Ajouter la commande</button>
         </form>
+
+        <details class="import-export">
+          <summary>Sauvegarder / partager mes commandes (export, import)</summary>
+          <div class="import-export-body">
+            <a href="/bots/<%= bot.id %>/commands/export" class="btn btn-secondary btn-sm">⬇ Exporter en JSON</a>
+            <form method="post" action="/bots/<%= bot.id %>/commands/import" class="settings-form" style="margin-top:12px;">
+              <%- include('partials/csrf') %>
+              <label>Coller un JSON exporté depuis ce site (les commandes importées sont désactivées par défaut)
+                <textarea name="json" rows="3" placeholder='[{"trigger": "bonjour", "type": "prefix", ...}]'></textarea>
+              </label>
+              <button type="submit" class="btn btn-secondary btn-sm">⬆ Importer</button>
+            </form>
+          </div>
+        </details>
 
         <% if (!commands.length) { %>
           <p class="empty-hint">Aucune commande pour l'instant. Ajoute-en une ci-dessus.</p>
@@ -357,6 +372,11 @@
                   <p class="command-uses"><%= cmd.uses_count %> utilisation(s)<% if (cmd.last_used_at) { %> · dernière le <%= new Date(cmd.last_used_at).toLocaleString('fr-FR') %><% } %></p>
                 </div>
                 <div class="command-item-actions">
+                  <a href="/bots/<%= bot.id %>/commands/<%= cmd.id %>/edit" class="btn btn-ghost btn-sm">Modifier</a>
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/duplicate" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-sm">Dupliquer</button>
+                  </form>
                   <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/toggle" class="inline-form">
                     <%- include('partials/csrf') %>
                     <button type="submit" class="btn btn-ghost btn-sm"><%= cmd.enabled ? 'Désactiver' : 'Activer' %></button>

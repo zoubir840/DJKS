@@ -640,37 +640,48 @@ app.get('/bots/:id/stream', requireAuth, (req, res) => {
 // Commandes
 // --------------------------------------------------------------------------
 
+// Validation partagée entre la création et la modification d'une commande.
+// Retourne { error } ou { values } prêt pour un INSERT/UPDATE.
+function parseCommandFields(body, bot) {
+  const type = body.type === 'slash' ? 'slash' : 'prefix';
+  const trigger = String(body.trigger || '').trim().toLowerCase().replace(/^\/|^!/, '');
+  const description = String(body.description || '').trim();
+  const response = String(body.response || '').trim();
+  const responseType = body.response_type === 'embed' ? 'embed' : 'text';
+  const embedTitle = String(body.embed_title || '').trim();
+  const embedColor = /^#[0-9a-fA-F]{6}$/.test(body.embed_color || '') ? body.embed_color : '#5865F2';
+  const cooldown = Math.min(Math.max(parseInt(body.cooldown_seconds, 10) || 0, 0), 3600);
+  const allowedRoleId = String(body.allowed_role_id || '').trim() || null;
+
+  if (!trigger || !response) {
+    return { error: 'Le déclencheur et la réponse sont obligatoires.' };
+  }
+  if (!/^[a-z0-9_-]+$/.test(trigger)) {
+    return { error: 'Le déclencheur ne peut contenir que des lettres, chiffres, - et _.' };
+  }
+  if (['help', 'kick', 'ban', 'clear'].includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
+    return { error: `"${trigger}" est réservé (aide, modération ou assistant IA). Choisis un autre nom.` };
+  }
+
+  return {
+    values: { trigger, type, description, response, responseType, embedTitle, embedColor, cooldown, allowedRoleId },
+  };
+}
+
 app.post('/bots/:id/commands', requireAuth, (req, res) => {
   const bot = loadOwnedBot(req, res);
   if (!bot) return;
 
-  const type = req.body.type === 'slash' ? 'slash' : 'prefix';
-  const trigger = String(req.body.trigger || '').trim().toLowerCase().replace(/^\/|^!/, '');
-  const description = String(req.body.description || '').trim();
-  const response = String(req.body.response || '').trim();
-  const responseType = req.body.response_type === 'embed' ? 'embed' : 'text';
-  const embedTitle = String(req.body.embed_title || '').trim();
-  const embedColor = /^#[0-9a-fA-F]{6}$/.test(req.body.embed_color || '') ? req.body.embed_color : '#5865F2';
-  const cooldown = Math.min(Math.max(parseInt(req.body.cooldown_seconds, 10) || 0, 0), 3600);
-  const allowedRoleId = String(req.body.allowed_role_id || '').trim() || null;
-
-  if (!trigger || !response) {
-    req.setFlash('error', 'Le déclencheur et la réponse sont obligatoires.');
-    return res.redirect(`/bots/${bot.id}`);
-  }
-  if (!/^[a-z0-9_-]+$/.test(trigger)) {
-    req.setFlash('error', 'Le déclencheur ne peut contenir que des lettres, chiffres, - et _.');
-    return res.redirect(`/bots/${bot.id}`);
-  }
-  if (['help', 'kick', 'ban', 'clear'].includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
-    req.setFlash('error', `"${trigger}" est réservé (aide, modération ou assistant IA). Choisis un autre nom.`);
+  const { error, values: v } = parseCommandFields(req.body, bot);
+  if (error) {
+    req.setFlash('error', error);
     return res.redirect(`/bots/${bot.id}`);
   }
 
   db.prepare(
     `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(bot.id, trigger, type, description, response, responseType, embedTitle, embedColor, cooldown, allowedRoleId);
+  ).run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId);
 
   req.setFlash('success', 'Commande ajoutée.');
   res.redirect(`/bots/${bot.id}`);
@@ -684,6 +695,51 @@ function loadOwnedCommand(req, res, bot) {
   }
   return cmd;
 }
+
+app.get('/bots/:id/commands/:cid/edit', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const cmd = loadOwnedCommand(req, res, bot);
+  if (!cmd) return;
+  res.render('command_edit', { bot, cmd, flash: res.locals.flash });
+});
+
+app.post('/bots/:id/commands/:cid/edit', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const cmd = loadOwnedCommand(req, res, bot);
+  if (!cmd) return;
+
+  const { error, values: v } = parseCommandFields(req.body, bot);
+  if (error) {
+    req.setFlash('error', error);
+    return res.redirect(`/bots/${bot.id}/commands/${cmd.id}/edit`);
+  }
+
+  db.prepare(
+    `UPDATE commands SET trigger = ?, type = ?, description = ?, response = ?, response_type = ?,
+       embed_title = ?, embed_color = ?, cooldown_seconds = ?, allowed_role_id = ? WHERE id = ?`
+  ).run(v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId, cmd.id);
+
+  req.setFlash('success', 'Commande modifiée.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/commands/:cid/duplicate', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const cmd = loadOwnedCommand(req, res, bot);
+  if (!cmd) return;
+
+  const newTrigger = `${cmd.trigger}-copie`.slice(0, 32);
+  db.prepare(
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+  ).run(bot.id, newTrigger, cmd.type, cmd.description, cmd.response, cmd.response_type, cmd.embed_title, cmd.embed_color, cmd.cooldown_seconds, cmd.allowed_role_id);
+
+  req.setFlash('success', `Commande dupliquée sous "${newTrigger}" (désactivée — renomme-la puis active-la).`);
+  res.redirect(`/bots/${bot.id}`);
+});
 
 app.post('/bots/:id/commands/:cid/toggle', requireAuth, (req, res) => {
   const bot = loadOwnedBot(req, res);
@@ -701,6 +757,86 @@ app.post('/bots/:id/commands/:cid/delete', requireAuth, (req, res) => {
   if (!cmd) return;
   db.prepare('DELETE FROM commands WHERE id = ?').run(cmd.id);
   req.setFlash('success', 'Commande supprimée.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+// --- Export / import d'un pack de commandes (sauvegarde, partage entre bots) ---
+const EXPORTABLE_FIELDS = [
+  'trigger',
+  'type',
+  'description',
+  'response',
+  'response_type',
+  'embed_title',
+  'embed_color',
+  'cooldown_seconds',
+  'allowed_role_id',
+];
+
+app.get('/bots/:id/commands/export', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const commands = db.prepare('SELECT * FROM commands WHERE bot_id = ? ORDER BY created_at').all(bot.id);
+  const payload = commands.map((cmd) => {
+    const out = {};
+    EXPORTABLE_FIELDS.forEach((f) => { out[f] = cmd[f]; });
+    return out;
+  });
+  const filename = `${bot.name.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() || 'bot'}-commandes.json`;
+  res.set('Content-Type', 'application/json');
+  res.set('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+app.post('/bots/:id/commands/import', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(req.body.json || '');
+  } catch (err) {
+    req.setFlash('error', "JSON invalide — colle exactement le contenu d'un fichier exporté depuis ce site.");
+    return res.redirect(`/bots/${bot.id}`);
+  }
+  if (!Array.isArray(parsed)) {
+    req.setFlash('error', 'Le JSON importé doit être une liste de commandes (un export généré depuis ce site).');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  const insert = db.prepare(
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+  );
+  for (const raw of parsed.slice(0, 100)) {
+    const { error, values: v } = parseCommandFields(
+      {
+        type: raw.type,
+        trigger: raw.trigger,
+        description: raw.description,
+        response: raw.response,
+        response_type: raw.response_type,
+        embed_title: raw.embed_title,
+        embed_color: raw.embed_color,
+        cooldown_seconds: raw.cooldown_seconds,
+        allowed_role_id: raw.allowed_role_id,
+      },
+      bot
+    );
+    if (error) {
+      skipped++;
+      continue;
+    }
+    insert.run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId);
+    imported++;
+  }
+
+  req.setFlash(
+    'success',
+    `${imported} commande(s) importée(s) (désactivées par défaut, à vérifier avant activation)${skipped ? `, ${skipped} ignorée(s) (invalides)` : ''}.`
+  );
   res.redirect(`/bots/${bot.id}`);
 });
 

@@ -10,6 +10,29 @@
     sync();
   }
 
+  // --- Aperçu en direct de la réponse d'une commande ---
+  const responseInput = document.getElementById('command-response-input');
+  const previewEl = document.getElementById('response-preview');
+  if (responseInput && previewEl) {
+    const SAMPLE = { '{user}': '@Toi', '{username}': 'Toi', '{server}': 'Mon Serveur', '{membercount}': '128' };
+    const render = () => {
+      const raw = responseInput.value;
+      if (!raw.trim()) { previewEl.innerHTML = ''; return; }
+      const variants = raw.split('|||').map((v) => v.trim()).filter(Boolean);
+      const sample = (variants[0] || raw).replace(/\{user\}|\{username\}|\{server\}|\{membercount\}/g, (m) => SAMPLE[m] || m);
+      const variantNote = variants.length > 1 ? ` <span class="preview-variants">(1 variante sur ${variants.length}, tirée au hasard)</span>` : '';
+      previewEl.innerHTML = `<span class="preview-label">Aperçu :</span> ${escapeHtml(sample)}${variantNote}`;
+    };
+    responseInput.addEventListener('input', render);
+    render();
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   // --- Générateur de commande par IA ---
   const genBtn = document.getElementById('ai-generate-btn');
   const genInput = document.getElementById('ai-generate-input');

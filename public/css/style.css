@@ -252,6 +252,27 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .command-uses { margin: 6px 0 0; font-size: 0.76rem; color: #5b606e; }
 .command-item-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 
+/* Aperçu de réponse */
+.response-preview {
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  color: var(--text);
+  min-height: 1.2em;
+  margin: -6px 0 14px;
+  white-space: pre-wrap;
+}
+.preview-label { color: var(--text-dim); font-weight: 600; margin-right: 6px; }
+.preview-variants { color: var(--text-dim); font-size: 0.8rem; }
+
+/* Export / import */
+.import-export { margin: 16px 0; }
+.import-export summary { cursor: pointer; color: var(--text-dim); font-size: 0.88rem; }
+.import-export summary:hover { color: var(--text); }
+.import-export-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+
 /* Générateur IA */
 .ai-generator {
   background: linear-gradient(135deg, rgba(88,101,242,0.12), rgba(240,178,50,0.08));

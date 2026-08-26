@@ -49,6 +49,10 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - variables dans les réponses : `{user}`, `{username}`, `{server}`, `{membercount}`
 - activer/désactiver/supprimer une commande, `!help` auto-généré
 - compteur d'utilisations et date de dernière utilisation par commande
+- **modifier** une commande existante (déclencheur, réponse, embed, cooldown, rôle requis…)
+- **dupliquer** une commande en un clic (créée désactivée, à renommer)
+- **aperçu en direct** de la réponse pendant la saisie (avec valeurs d'exemple)
+- **export / import** de tes commandes en JSON (sauvegarde, ou pour les recopier sur un autre bot)
 
 ### Fonctionnalités intégrées (activables en un clic)
 - 🛠️ **Modération** : `!kick`, `!ban`, `!clear`, avec vérification des permissions Discord de l'utilisateur et du bot avant chaque action
