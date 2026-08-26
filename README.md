@@ -64,6 +64,11 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - 🚫 **Anti-spam / mots interdits** : suppression automatique des messages contenant un mot de la liste
 - 🧾 **Salon de logs de modération** : les actions (kick/ban/clear/anti-spam) sont journalisées sur Discord, pas seulement sur le site
 - 🎛️ **Menus de rôles à boutons** : publie un message avec des boutons Discord — chaque membre clique pour obtenir ou retirer un rôle, sans réaction ni commande à taper. Gérable entièrement depuis le site (ajout/suppression de rôles, republication en un clic)
+- 🏆 **Système de niveaux (XP)** : les membres gagnent de l'XP en discutant (cooldown anti-farm configurable), `!rank` et `!leaderboard` intégrés, annonce de passage de niveau dans un salon au choix, classement visible et réinitialisable depuis le site
+- ⭐ **Starboard** : republie automatiquement un message dans un salon dédié dès qu'il atteint un nombre de réactions choisi (emoji et seuil configurables)
+- 📊 **Sondages** : crée une question à choix multiples (2 à 10 options) depuis le site, publie-la en un clic — le bot poste l'embed et réagit avec les emojis numérotés
+- 🔌 **Webhooks entrants** : génère un lien unique par bot ; un simple appel HTTP POST (JSON) depuis un autre service (GitHub, IFTTT, un script maison…) poste un message dans le salon de ton choix, avec un modèle personnalisable (`{message}`, `{title}`, `{url}`, `{json}`)
+- 🔎 **Commandes « mot-clé »** : en plus des commandes à préfixe classiques, une commande peut se déclencher dès que son mot apparaît n'importe où dans un message, sans préfixe
 
 ## Démarrage rapide (local)
 

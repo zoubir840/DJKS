@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS bots (
   ai_daily_limit INTEGER NOT NULL DEFAULT 150,
   ai_usage_count INTEGER NOT NULL DEFAULT 0,
   ai_usage_date TEXT,
+  starboard_enabled INTEGER NOT NULL DEFAULT 0,
+  starboard_channel_id TEXT,
+  starboard_emoji TEXT NOT NULL DEFAULT '⭐',
+  starboard_threshold INTEGER NOT NULL DEFAULT 3,
+  leveling_enabled INTEGER NOT NULL DEFAULT 0,
+  leveling_announce_channel_id TEXT,
+  leveling_xp_per_message INTEGER NOT NULL DEFAULT 15,
+  leveling_cooldown_seconds INTEGER NOT NULL DEFAULT 60,
+  webhook_enabled INTEGER NOT NULL DEFAULT 0,
+  webhook_token TEXT,
+  webhook_channel_id TEXT,
+  webhook_template TEXT NOT NULL DEFAULT '📢 {message}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -67,6 +79,7 @@ CREATE TABLE IF NOT EXISTS commands (
   embed_color TEXT NOT NULL DEFAULT '#5865F2',
   cooldown_seconds INTEGER NOT NULL DEFAULT 0,
   allowed_role_id TEXT,
+  match_anywhere INTEGER NOT NULL DEFAULT 0,
   enabled INTEGER NOT NULL DEFAULT 1,
   uses_count INTEGER NOT NULL DEFAULT 0,
   last_used_at TEXT,
@@ -93,10 +106,49 @@ CREATE TABLE IF NOT EXISTS role_menu_options (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS levels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  discord_user_id TEXT NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
+  xp INTEGER NOT NULL DEFAULT 0,
+  level INTEGER NOT NULL DEFAULT 0,
+  last_xp_at TEXT,
+  UNIQUE(bot_id, discord_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS starred_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  original_message_id TEXT NOT NULL,
+  starboard_message_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(bot_id, original_message_id)
+);
+
+CREATE TABLE IF NOT EXISTS polls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL,
+  message_id TEXT,
+  question TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS poll_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_bots_user ON bots(user_id);
 CREATE INDEX IF NOT EXISTS idx_commands_bot ON commands(bot_id);
 CREATE INDEX IF NOT EXISTS idx_role_menus_bot ON role_menus(bot_id);
 CREATE INDEX IF NOT EXISTS idx_role_menu_options_menu ON role_menu_options(role_menu_id);
+CREATE INDEX IF NOT EXISTS idx_levels_bot ON levels(bot_id);
+CREATE INDEX IF NOT EXISTS idx_polls_bot ON polls(bot_id);
+CREATE INDEX IF NOT EXISTS idx_poll_options_poll ON poll_options(poll_id);
 `);
 
 // --- Migration "à la volée" pour les bases créées par une version antérieure ---
@@ -139,5 +191,18 @@ ensureColumn('commands', 'cooldown_seconds', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('commands', 'uses_count', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('commands', 'last_used_at', 'TEXT');
 ensureColumn('commands', 'allowed_role_id', 'TEXT');
+ensureColumn('bots', 'starboard_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'starboard_channel_id', 'TEXT');
+ensureColumn('bots', 'starboard_emoji', "TEXT NOT NULL DEFAULT '⭐'");
+ensureColumn('bots', 'starboard_threshold', 'INTEGER NOT NULL DEFAULT 3');
+ensureColumn('bots', 'leveling_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'leveling_announce_channel_id', 'TEXT');
+ensureColumn('bots', 'leveling_xp_per_message', 'INTEGER NOT NULL DEFAULT 15');
+ensureColumn('bots', 'leveling_cooldown_seconds', 'INTEGER NOT NULL DEFAULT 60');
+ensureColumn('bots', 'webhook_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'webhook_token', 'TEXT');
+ensureColumn('bots', 'webhook_channel_id', 'TEXT');
+ensureColumn('bots', 'webhook_template', "TEXT NOT NULL DEFAULT '📢 {message}'");
+ensureColumn('commands', 'match_anywhere', 'INTEGER NOT NULL DEFAULT 0');
 
 module.exports = db;

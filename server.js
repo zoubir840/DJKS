@@ -50,8 +50,53 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json({ limit: '20kb' }));
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- Webhooks entrants (avant la session/CSRF : endpoint public, sans état) ---
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes sur ce webhook, réessaie dans une minute.' },
+});
+
+function renderWebhookTemplate(template, body) {
+  const pick = (...keys) => keys.map((k) => body?.[k]).find((v) => typeof v === 'string') || '';
+  const message = pick('message', 'text', 'content');
+  const title = pick('title');
+  const url = pick('url', 'link');
+  let json;
+  try {
+    json = JSON.stringify(body, null, 2);
+  } catch (err) {
+    json = String(body);
+  }
+  if (json.length > 1500) json = `${json.slice(0, 1500)}…`;
+
+  let out = String(template || '{message}')
+    .replaceAll('{message}', message)
+    .replaceAll('{title}', title)
+    .replaceAll('{url}', url)
+    .replaceAll('{json}', json);
+  if (out.length > 2000) out = `${out.slice(0, 1999)}…`;
+  return out.trim() || 'Webhook reçu (payload vide ou modèle de message ne produit aucun texte).';
+}
+
+app.post('/webhook/:token', webhookLimiter, async (req, res) => {
+  const bot = db.prepare('SELECT * FROM bots WHERE webhook_token = ? AND webhook_enabled = 1').get(req.params.token);
+  if (!bot) return res.status(404).json({ error: 'Webhook inconnu ou désactivé.' });
+  if (!bot.webhook_channel_id) return res.status(400).json({ error: 'Aucun salon configuré pour ce webhook.' });
+
+  const text = renderWebhookTemplate(bot.webhook_template, req.body || {});
+  try {
+    await botManager.sendToChannel(bot.id, bot.webhook_channel_id, text);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
 
 app.use(
   session({
@@ -322,6 +367,13 @@ app.get('/bots/:id', requireAuth, (req, res) => {
   roleMenus.forEach((menu) => {
     menu.options = db.prepare('SELECT * FROM role_menu_options WHERE role_menu_id = ? ORDER BY position, id').all(menu.id);
   });
+  const polls = db.prepare('SELECT * FROM polls WHERE bot_id = ? ORDER BY created_at DESC').all(bot.id);
+  polls.forEach((poll) => {
+    poll.options = db.prepare('SELECT * FROM poll_options WHERE poll_id = ? ORDER BY position, id').all(poll.id);
+  });
+  const topLevels = db.prepare('SELECT * FROM levels WHERE bot_id = ? ORDER BY xp DESC LIMIT 5').all(bot.id);
+  const levelCount = db.prepare('SELECT COUNT(*) AS n FROM levels WHERE bot_id = ?').get(bot.id).n;
+  const webhookUrl = bot.webhook_token ? `${req.protocol}://${req.get('host')}/webhook/${bot.webhook_token}` : null;
   let maskedToken;
   try {
     maskedToken = maskToken(decrypt(bot.token_encrypted));
@@ -333,6 +385,10 @@ app.get('/bots/:id', requireAuth, (req, res) => {
     bot,
     commands,
     roleMenus,
+    polls,
+    topLevels,
+    levelCount,
+    webhookUrl,
     aiConfigured: ai.isConfigured(),
     aiProviderLabel: ai.providerLabel(),
     aiUsageToday: bot.ai_usage_date === today ? bot.ai_usage_count : 0,
@@ -481,6 +537,133 @@ app.post('/bots/:id/ai', requireAuth, (req, res) => {
     bot.id
   );
   req.setFlash('success', 'Assistant IA enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/leveling', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const announceChannelId = String(req.body.announce_channel_id || '').trim() || null;
+  const xpPerMessage = Math.min(Math.max(parseInt(req.body.xp_per_message, 10) || 15, 1), 1000);
+  const cooldown = Math.min(Math.max(parseInt(req.body.cooldown_seconds, 10) || 60, 5), 3600);
+  db.prepare(
+    'UPDATE bots SET leveling_enabled = ?, leveling_announce_channel_id = ?, leveling_xp_per_message = ?, leveling_cooldown_seconds = ? WHERE id = ?'
+  ).run(enabled, announceChannelId, xpPerMessage, cooldown, bot.id);
+  req.setFlash('success', 'Système de niveaux enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/leveling/reset', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  db.prepare('DELETE FROM levels WHERE bot_id = ?').run(bot.id);
+  req.setFlash('success', 'Classement réinitialisé.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/starboard', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const channelId = String(req.body.channel_id || '').trim() || null;
+  const emoji = String(req.body.emoji || '⭐').trim().slice(0, 8) || '⭐';
+  const threshold = Math.min(Math.max(parseInt(req.body.threshold, 10) || 3, 1), 1000);
+  db.prepare('UPDATE bots SET starboard_enabled = ?, starboard_channel_id = ?, starboard_emoji = ?, starboard_threshold = ? WHERE id = ?').run(
+    enabled,
+    channelId,
+    emoji,
+    threshold,
+    bot.id
+  );
+  req.setFlash('success', 'Starboard enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/webhook', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const channelId = String(req.body.channel_id || '').trim() || null;
+  const template = String(req.body.template || '').trim() || '📢 {message}';
+  db.prepare('UPDATE bots SET webhook_enabled = ?, webhook_channel_id = ?, webhook_template = ? WHERE id = ?').run(
+    enabled,
+    channelId,
+    template,
+    bot.id
+  );
+  req.setFlash('success', 'Webhook enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/webhook/generate', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const token = require('crypto').randomBytes(20).toString('hex');
+  db.prepare('UPDATE bots SET webhook_token = ? WHERE id = ?').run(token, bot.id);
+  req.setFlash('success', 'Nouveau lien webhook généré. Les intégrations utilisant l\'ancien lien cesseront de fonctionner.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+// --------------------------------------------------------------------------
+// Sondages (publiés avec des réactions numérotées)
+// --------------------------------------------------------------------------
+
+function loadOwnedPoll(req, res, bot) {
+  const poll = db.prepare('SELECT * FROM polls WHERE id = ? AND bot_id = ?').get(req.params.pid, bot.id);
+  if (!poll) {
+    res.status(404).end();
+    return null;
+  }
+  return poll;
+}
+
+app.post('/bots/:id/polls', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const channelId = String(req.body.channel_id || '').trim();
+  const question = String(req.body.question || '').trim();
+  const optionsRaw = String(req.body.options || '');
+  const options = optionsRaw
+    .split('\n')
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  if (!channelId || !question || options.length < 2) {
+    req.setFlash('error', 'Il faut un salon, une question, et au moins deux options (une par ligne).');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+
+  const info = db.prepare('INSERT INTO polls (bot_id, channel_id, question) VALUES (?, ?, ?)').run(bot.id, channelId, question);
+  const insertOption = db.prepare('INSERT INTO poll_options (poll_id, label, position) VALUES (?, ?, ?)');
+  options.forEach((label, i) => insertOption.run(info.lastInsertRowid, label.slice(0, 200), i));
+
+  req.setFlash('success', 'Sondage créé. Publie-le pour l\'envoyer sur Discord.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/polls/:pid/publish', requireAuth, async (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const poll = loadOwnedPoll(req, res, bot);
+  if (!poll) return;
+  try {
+    await botManager.publishPoll(bot.id, poll.id);
+    req.setFlash('success', 'Sondage publié sur Discord.');
+  } catch (err) {
+    req.setFlash('error', err.message);
+  }
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/polls/:pid/delete', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const poll = loadOwnedPoll(req, res, bot);
+  if (!poll) return;
+  db.prepare('DELETE FROM polls WHERE id = ?').run(poll.id);
+  req.setFlash('success', 'Sondage supprimé (le message Discord existant reste affiché).');
   res.redirect(`/bots/${bot.id}`);
 });
 
@@ -679,6 +862,7 @@ function parseCommandFields(body, bot) {
   const embedColor = /^#[0-9a-fA-F]{6}$/.test(body.embed_color || '') ? body.embed_color : '#5865F2';
   const cooldown = Math.min(Math.max(parseInt(body.cooldown_seconds, 10) || 0, 0), 3600);
   const allowedRoleId = String(body.allowed_role_id || '').trim() || null;
+  const matchAnywhere = type === 'prefix' && body.match_anywhere ? 1 : 0;
 
   if (!trigger || !response) {
     return { error: 'Le déclencheur et la réponse sont obligatoires.' };
@@ -686,12 +870,13 @@ function parseCommandFields(body, bot) {
   if (!/^[a-z0-9_-]+$/.test(trigger)) {
     return { error: 'Le déclencheur ne peut contenir que des lettres, chiffres, - et _.' };
   }
-  if (['help', 'kick', 'ban', 'clear'].includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
-    return { error: `"${trigger}" est réservé (aide, modération ou assistant IA). Choisis un autre nom.` };
+  const reserved = ['help', 'kick', 'ban', 'clear', 'rank', 'leaderboard'];
+  if (reserved.includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
+    return { error: `"${trigger}" est réservé (aide, modération, niveaux ou assistant IA). Choisis un autre nom.` };
   }
 
   return {
-    values: { trigger, type, description, response, responseType, embedTitle, embedColor, cooldown, allowedRoleId },
+    values: { trigger, type, description, response, responseType, embedTitle, embedColor, cooldown, allowedRoleId, matchAnywhere },
   };
 }
 
@@ -706,9 +891,9 @@ app.post('/bots/:id/commands', requireAuth, (req, res) => {
   }
 
   db.prepare(
-    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId);
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, match_anywhere)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId, v.matchAnywhere);
 
   req.setFlash('success', 'Commande ajoutée.');
   res.redirect(`/bots/${bot.id}`);
@@ -745,8 +930,8 @@ app.post('/bots/:id/commands/:cid/edit', requireAuth, (req, res) => {
 
   db.prepare(
     `UPDATE commands SET trigger = ?, type = ?, description = ?, response = ?, response_type = ?,
-       embed_title = ?, embed_color = ?, cooldown_seconds = ?, allowed_role_id = ? WHERE id = ?`
-  ).run(v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId, cmd.id);
+       embed_title = ?, embed_color = ?, cooldown_seconds = ?, allowed_role_id = ?, match_anywhere = ? WHERE id = ?`
+  ).run(v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId, v.matchAnywhere, cmd.id);
 
   req.setFlash('success', 'Commande modifiée.');
   res.redirect(`/bots/${bot.id}`);
@@ -760,9 +945,21 @@ app.post('/bots/:id/commands/:cid/duplicate', requireAuth, (req, res) => {
 
   const newTrigger = `${cmd.trigger}-copie`.slice(0, 32);
   db.prepare(
-    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
-  ).run(bot.id, newTrigger, cmd.type, cmd.description, cmd.response, cmd.response_type, cmd.embed_title, cmd.embed_color, cmd.cooldown_seconds, cmd.allowed_role_id);
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, match_anywhere, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+  ).run(
+    bot.id,
+    newTrigger,
+    cmd.type,
+    cmd.description,
+    cmd.response,
+    cmd.response_type,
+    cmd.embed_title,
+    cmd.embed_color,
+    cmd.cooldown_seconds,
+    cmd.allowed_role_id,
+    cmd.match_anywhere
+  );
 
   req.setFlash('success', `Commande dupliquée sous "${newTrigger}" (désactivée — renomme-la puis active-la).`);
   res.redirect(`/bots/${bot.id}`);
@@ -798,6 +995,7 @@ const EXPORTABLE_FIELDS = [
   'embed_color',
   'cooldown_seconds',
   'allowed_role_id',
+  'match_anywhere',
 ];
 
 app.get('/bots/:id/commands/export', requireAuth, (req, res) => {
@@ -834,8 +1032,8 @@ app.post('/bots/:id/commands/import', requireAuth, (req, res) => {
   let imported = 0;
   let skipped = 0;
   const insert = db.prepare(
-    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id, match_anywhere, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
   );
   for (const raw of parsed.slice(0, 100)) {
     const { error, values: v } = parseCommandFields(
@@ -849,6 +1047,7 @@ app.post('/bots/:id/commands/import', requireAuth, (req, res) => {
         embed_color: raw.embed_color,
         cooldown_seconds: raw.cooldown_seconds,
         allowed_role_id: raw.allowed_role_id,
+        match_anywhere: raw.match_anywhere,
       },
       bot
     );
@@ -856,7 +1055,7 @@ app.post('/bots/:id/commands/import', requireAuth, (req, res) => {
       skipped++;
       continue;
     }
-    insert.run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId);
+    insert.run(bot.id, v.trigger, v.type, v.description, v.response, v.responseType, v.embedTitle, v.embedColor, v.cooldown, v.allowedRoleId, v.matchAnywhere);
     imported++;
   }
 

@@ -281,6 +281,139 @@
         <% } %>
       </section>
 
+      <section class="card">
+        <div class="card-header">
+          <h2>🏆 Système de niveaux (XP)</h2>
+          <% if (bot.leveling_enabled) { %><span class="hint" style="margin:0;"><%= levelCount %> membre(s) classé(s)</span><% } %>
+        </div>
+        <form method="post" action="/bots/<%= bot.id %>/leveling" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.leveling_enabled ? 'checked' : '' %> />
+            Activer l'XP par message + <code><%= bot.prefix %>rank</code> et <code><%= bot.prefix %>leaderboard</code>
+          </label>
+          <div class="command-form-row">
+            <label>XP par message (± aléatoire)
+              <input type="number" name="xp_per_message" min="1" max="1000" value="<%= bot.leveling_xp_per_message %>" />
+            </label>
+            <label>Cooldown entre deux gains (s)
+              <input type="number" name="cooldown_seconds" min="5" max="3600" value="<%= bot.leveling_cooldown_seconds %>" />
+            </label>
+          </div>
+          <label>Salon d'annonce de passage de niveau (optionnel — sinon, dans le salon du message)
+            <input type="text" name="announce_channel_id" value="<%= bot.leveling_announce_channel_id || '' %>" placeholder="ID du salon" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <% if (topLevels.length) { %>
+          <ul class="role-menu-options" style="margin-top:12px;">
+            <% topLevels.forEach((row, i) => { %>
+              <li class="role-chip"><%= ['🥇','🥈','🥉'][i] || (i+1) + '.' %> <%= row.username %> — niveau <%= row.level %></li>
+            <% }) %>
+          </ul>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/leveling/reset" class="inline-form" style="margin-top:12px;"
+              onsubmit="return confirm('Réinitialiser tout le classement de ce bot ?');">
+          <%- include('partials/csrf') %>
+          <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Réinitialiser le classement</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>⭐ Starboard</h2></div>
+        <p class="hint" style="margin-top:0;">Republie automatiquement un message dans un salon dédié quand il reçoit assez de réactions.</p>
+        <form method="post" action="/bots/<%= bot.id %>/starboard" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.starboard_enabled ? 'checked' : '' %> /> Activer le starboard
+          </label>
+          <div class="command-form-row">
+            <label>Salon starboard
+              <input type="text" name="channel_id" value="<%= bot.starboard_channel_id || '' %>" placeholder="ID du salon" />
+            </label>
+            <label>Emoji
+              <input type="text" name="emoji" value="<%= bot.starboard_emoji %>" maxlength="8" />
+            </label>
+            <label>Seuil (nombre de réactions)
+              <input type="number" name="threshold" min="1" max="1000" value="<%= bot.starboard_threshold %>" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>🔌 Webhooks entrants</h2></div>
+        <p class="hint" style="margin-top:0;">Connecte un autre service (GitHub, IFTTT, un script...) : un appel HTTP sur ce lien poste un message sur Discord.</p>
+        <form method="post" action="/bots/<%= bot.id %>/webhook" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.webhook_enabled ? 'checked' : '' %> /> Activer ce webhook
+          </label>
+          <label>Salon de destination
+            <input type="text" name="channel_id" value="<%= bot.webhook_channel_id || '' %>" placeholder="ID du salon" />
+          </label>
+          <label>Modèle de message
+            <input type="text" name="template" value="<%= bot.webhook_template %>" />
+          </label>
+          <p class="hint">Variables tirées du JSON envoyé : <code>{message}</code> <code>{title}</code> <code>{url}</code> <code>{json}</code> (tout le payload)</p>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <% if (webhookUrl) { %>
+          <p class="hint">URL : <code><%= webhookUrl %></code></p>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/webhook/generate" class="inline-form"
+              onsubmit="return confirm('Regenerer ce lien ? Un lien deja utilise ailleurs cessera de fonctionner.');">
+          <%- include('partials/csrf') %>
+          <button type="submit" class="btn btn-ghost btn-sm"><%= webhookUrl ? 'Regénérer le lien' : 'Générer un lien' %></button>
+        </form>
+        <p class="hint">Test rapide : <code>curl -X POST <%= webhookUrl || '(génère un lien ci-dessus)' %> -H "Content-Type: application/json" -d '{"message":"Coucou !"}'</code></p>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>📊 Sondages</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/polls" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Question
+              <input type="text" name="question" required placeholder="Quel jeu ce soir ?" />
+            </label>
+          </div>
+          <label>Options (une par ligne, 2 à 10)
+            <textarea name="options" rows="3" placeholder="Valorant&#10;Minecraft&#10;Among Us"></textarea>
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer le sondage</button>
+        </form>
+
+        <% if (polls.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% polls.forEach(poll => { %>
+              <li class="command-item">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= poll.question %></span>
+                  <% if (poll.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <p class="command-response">Salon <code>#<%= poll.channel_id %></code> — <%= poll.options.map(o => o.label).join(' · ') %></p>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/polls/<%= poll.id %>/publish" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-primary btn-sm"><%= poll.message_id ? 'Republier' : 'Publier' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/polls/<%= poll.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce sondage ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
       <section class="card command-card">
         <div class="card-header">
           <h2>Commandes (<%= commands.length %>)</h2>
@@ -319,6 +452,9 @@
           </label>
           <label>Rôle requis (optionnel — laisser vide = tout le monde)
             <input type="text" name="allowed_role_id" placeholder="ID du rôle Discord" />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="match_anywhere" /> Répondre si ce mot apparaît n'importe où dans un message (commandes « préfixe » uniquement, pas besoin du préfixe)
           </label>
           <label>Format de réponse
             <select name="response_type" id="response-type-select">
@@ -367,6 +503,7 @@
                   <% if (cmd.response_type === 'embed') { %><span class="command-badge command-badge-embed">embed</span><% } %>
                   <% if (cmd.cooldown_seconds > 0) { %><span class="command-badge command-badge-cooldown">⏳ <%= cmd.cooldown_seconds %>s</span><% } %>
                   <% if (cmd.allowed_role_id) { %><span class="command-badge command-badge-cooldown">🔒 rôle requis</span><% } %>
+                  <% if (cmd.match_anywhere) { %><span class="command-badge command-badge-cooldown">🔎 mot-clé</span><% } %>
                   <span class="command-desc"><%= cmd.description || 'Sans description' %></span>
                   <p class="command-response"><%= cmd.response %></p>
                   <p class="command-uses"><%= cmd.uses_count %> utilisation(s)<% if (cmd.last_used_at) { %> · dernière le <%= new Date(cmd.last_used_at).toLocaleString('fr-FR') %><% } %></p>

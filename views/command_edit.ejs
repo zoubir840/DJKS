@@ -33,6 +33,9 @@
       <label>Rôle requis (optionnel — laisser vide = tout le monde)
         <input type="text" name="allowed_role_id" value="<%= cmd.allowed_role_id || '' %>" placeholder="ID du rôle Discord" />
       </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="match_anywhere" <%= cmd.match_anywhere ? 'checked' : '' %> /> Répondre si ce mot apparaît n'importe où dans un message (commandes « préfixe » uniquement)
+      </label>
       <label>Format de réponse
         <select name="response_type" id="response-type-select">
           <option value="text" <%= cmd.response_type === 'text' ? 'selected' : '' %>>Texte simple</option>

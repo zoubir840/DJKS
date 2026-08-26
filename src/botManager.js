@@ -22,6 +22,26 @@ const ai = require('./ai');
 const MAX_LOG_LINES = 300;
 const AI_COOLDOWN_MS = 6000;
 const AI_DEFAULT_DAILY_LIMIT = 150;
+const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+// --- Courbe de progression du système de niveaux (façon MEE6) ---
+function xpForLevel(level) {
+  return 5 * level * level + 50 * level + 100;
+}
+function levelFromXp(totalXp) {
+  let level = 0;
+  let remaining = totalXp;
+  while (remaining >= xpForLevel(level)) {
+    remaining -= xpForLevel(level);
+    level++;
+  }
+  return level;
+}
+function totalXpForLevel(level) {
+  let total = 0;
+  for (let l = 0; l < level; l++) total += xpForLevel(l);
+  return total;
+}
 
 // Permissions demandées lors de l'invitation d'un bot sur un serveur :
 // de quoi envoyer des messages, des embeds, réagir, modérer et gérer les
@@ -223,8 +243,9 @@ class BotManager extends EventEmitter {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions,
       ],
-      partials: [Partials.Channel, Partials.GuildMember],
+      partials: [Partials.Channel, Partials.GuildMember, Partials.Message, Partials.Reaction],
     });
 
     // On enregistre l'instance tout de suite pour éviter les démarrages concurrents.
@@ -349,6 +370,11 @@ class BotManager extends EventEmitter {
           }
         }
 
+        // --- Système de niveaux (XP par message, avec cooldown) ---
+        if (currentBot.leveling_enabled) {
+          await this._handleLevelingMessage(botId, currentBot, message);
+        }
+
         const prefix = currentBot.prefix || '!';
         const mentioned = message.mentions.has(client.user.id);
 
@@ -365,6 +391,10 @@ class BotManager extends EventEmitter {
             return;
           }
         }
+
+        // --- Commandes "mot-clé n'importe où dans le message" (pas besoin du préfixe) ---
+        const keywordCmd = await this._matchKeywordCommand(botId, message);
+        if (keywordCmd) return;
 
         if (!message.content.startsWith(prefix)) return;
 
@@ -386,12 +416,25 @@ class BotManager extends EventEmitter {
           if (currentBot.ai_enabled) {
             lines.push(`**${prefix}${currentBot.ai_trigger || 'ai'}** <message> — Discute avec l'assistant IA (ou mentionne-moi)`);
           }
+          if (currentBot.leveling_enabled) {
+            lines.push(`**${prefix}rank** [@membre] — Affiche le niveau et l'XP`);
+            lines.push(`**${prefix}leaderboard** — Classement des membres les plus actifs`);
+          }
           await message.reply(lines.length ? lines.join('\n') : "Aucune commande n'est configurée pour ce bot.");
           return;
         }
 
         if (currentBot.moderation_enabled && ['kick', 'ban', 'clear'].includes(trigger)) {
           await this._handleModeration(botId, trigger, message, rest, currentBot, client);
+          return;
+        }
+
+        if (currentBot.leveling_enabled && trigger === 'rank') {
+          await this._handleRankCommand(botId, message);
+          return;
+        }
+        if (currentBot.leveling_enabled && trigger === 'leaderboard') {
+          await this._handleLeaderboardCommand(botId, message);
           return;
         }
 
@@ -474,6 +517,30 @@ class BotManager extends EventEmitter {
         this._log(botId, 'info', `${interaction.user.tag} a utilisé /${interaction.commandName}`);
       } catch (err) {
         this._log(botId, 'error', `Erreur sur une interaction : ${err.message}`);
+      }
+    });
+
+    client.on('messageReactionAdd', async (reaction, user) => {
+      try {
+        if (user.bot) return;
+        const currentBot = db.prepare('SELECT * FROM bots WHERE id = ?').get(botId);
+        if (!currentBot || !currentBot.starboard_enabled || !currentBot.starboard_channel_id) return;
+
+        if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+        if (!reaction.message?.guild) return;
+
+        const wanted = currentBot.starboard_emoji || '⭐';
+        if (reaction.emoji.name !== wanted && reaction.emoji.toString() !== wanted) return;
+
+        const count = reaction.count || 0;
+        if (count < (currentBot.starboard_threshold || 3)) return;
+
+        const targetMessage = reaction.message.partial ? await reaction.message.fetch().catch(() => null) : reaction.message;
+        if (!targetMessage || targetMessage.channel.id === currentBot.starboard_channel_id) return;
+
+        await this._upsertStarboard(botId, client, currentBot, targetMessage, count);
+      } catch (err) {
+        this._log(botId, 'error', `Erreur starboard : ${err.message}`);
       }
     });
 
@@ -608,6 +675,205 @@ class BotManager extends EventEmitter {
 
     this._log(botId, 'success', `Menu de rôles "${menu.title}" publié dans <#${menu.channel_id}>.`);
     return { ok: true, messageId };
+  }
+
+  async _handleLevelingMessage(botId, currentBot, message) {
+    const inst = this.instances.get(botId);
+    const cooldownMs = (currentBot.leveling_cooldown_seconds || 60) * 1000;
+    const cdKey = `xp:${message.author.id}`;
+    const last = inst.cooldowns.get(cdKey) || 0;
+    if (Date.now() - last < cooldownMs) return;
+    inst.cooldowns.set(cdKey, Date.now());
+
+    const gained = (currentBot.leveling_xp_per_message || 15) + Math.floor(Math.random() * 11);
+    const row = db.prepare('SELECT * FROM levels WHERE bot_id = ? AND discord_user_id = ?').get(botId, message.author.id);
+    const previousLevel = row ? row.level : 0;
+    const newXp = (row ? row.xp : 0) + gained;
+    const newLevel = levelFromXp(newXp);
+
+    if (row) {
+      db.prepare("UPDATE levels SET xp = ?, level = ?, username = ?, last_xp_at = datetime('now') WHERE id = ?").run(
+        newXp,
+        newLevel,
+        message.author.username,
+        row.id
+      );
+    } else {
+      db.prepare(
+        "INSERT INTO levels (bot_id, discord_user_id, username, xp, level, last_xp_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
+      ).run(botId, message.author.id, message.author.username, newXp, newLevel);
+    }
+
+    if (newLevel > previousLevel) {
+      try {
+        const targetChannelId = currentBot.leveling_announce_channel_id || message.channel.id;
+        const channel = targetChannelId === message.channel.id ? message.channel : await message.client.channels.fetch(targetChannelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          await channel.send(`🎉 <@${message.author.id}> passe **niveau ${newLevel}** !`);
+        }
+        this._log(botId, 'success', `${message.author.tag} passe niveau ${newLevel}.`);
+      } catch (err) {
+        this._log(botId, 'error', `Échec de l'annonce de niveau : ${err.message}`);
+      }
+    }
+  }
+
+  async _handleRankCommand(botId, message) {
+    const target = message.mentions.users?.first() || message.author;
+    const row = db.prepare('SELECT * FROM levels WHERE bot_id = ? AND discord_user_id = ?').get(botId, target.id);
+    const xp = row ? row.xp : 0;
+    const level = row ? row.level : 0;
+    const progress = xp - totalXpForLevel(level);
+    const rankPosition = db.prepare('SELECT COUNT(*) + 1 AS pos FROM levels WHERE bot_id = ? AND xp > ?').get(botId, xp).pos;
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setAuthor({ name: target.tag, iconURL: target.displayAvatarURL ? target.displayAvatarURL() : undefined })
+      .setDescription(
+        `**Niveau ${level}** — ${xp} XP au total\nProgression : ${progress}/${xpForLevel(level)} XP vers le niveau ${level + 1}\nRang : #${rankPosition}`
+      );
+    await message.reply({ embeds: [embed] });
+  }
+
+  async _handleLeaderboardCommand(botId, message) {
+    const top = db.prepare('SELECT * FROM levels WHERE bot_id = ? ORDER BY xp DESC LIMIT 10').all(botId);
+    if (!top.length) {
+      await message.reply("Personne n'a encore gagné d'XP sur ce serveur.");
+      return;
+    }
+    const medals = ['🥇', '🥈', '🥉'];
+    const lines = top.map((row, i) => `${medals[i] || `**${i + 1}.**`} <@${row.discord_user_id}> — niveau ${row.level} (${row.xp} XP)`);
+    const embed = new EmbedBuilder().setColor('#f0b232').setTitle('🏆 Classement').setDescription(lines.join('\n'));
+    await message.reply({ embeds: [embed] });
+  }
+
+  async _upsertStarboard(botId, client, currentBot, message, count) {
+    const channel = await client.channels.fetch(currentBot.starboard_channel_id).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+      .setColor('#f0b232')
+      .setAuthor({ name: message.author?.tag || 'Inconnu', iconURL: message.author?.displayAvatarURL ? message.author.displayAvatarURL() : undefined })
+      .setDescription(message.content || '*(pas de texte — pièce jointe ou embed)*')
+      .addFields({ name: 'Salon', value: `<#${message.channel.id}>` })
+      .setFooter({ text: `${currentBot.starboard_emoji || '⭐'} ${count}` })
+      .setTimestamp(message.createdAt);
+    const firstImage = message.attachments?.find((a) => a.contentType?.startsWith('image/'));
+    if (firstImage) embed.setImage(firstImage.url);
+
+    const linkRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('Voir le message').setStyle(ButtonStyle.Link).setURL(message.url)
+    );
+
+    const existing = db.prepare('SELECT * FROM starred_messages WHERE bot_id = ? AND original_message_id = ?').get(botId, message.id);
+    if (existing && existing.starboard_message_id) {
+      const starMsg = await channel.messages.fetch(existing.starboard_message_id).catch(() => null);
+      if (starMsg) {
+        await starMsg.edit({ embeds: [embed], components: [linkRow] });
+        return;
+      }
+    }
+
+    const sent = await channel.send({ embeds: [embed], components: [linkRow] });
+    db.prepare(
+      `INSERT INTO starred_messages (bot_id, original_message_id, starboard_message_id) VALUES (?, ?, ?)
+       ON CONFLICT(bot_id, original_message_id) DO UPDATE SET starboard_message_id = excluded.starboard_message_id`
+    ).run(botId, message.id, sent.id);
+    this._log(botId, 'success', `Message de ${message.author?.tag || '?'} ajouté au starboard (${count} ${currentBot.starboard_emoji || '⭐'}).`);
+  }
+
+  /** Envoie un message texte dans un salon du bot — utilisé par les webhooks entrants. */
+  async sendToChannel(botId, channelId, content) {
+    botId = Number(botId);
+    const inst = this.instances.get(botId);
+    if (!inst || !inst.client.isReady()) throw new Error('Le bot est hors ligne, impossible d\'envoyer le message.');
+    const channel = await inst.client.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased()) throw new Error('Salon introuvable ou non textuel.');
+    await channel.send(content);
+    this._log(botId, 'info', `Message envoyé via webhook dans <#${channelId}>.`);
+  }
+
+  /** Publie (ou met à jour) un sondage à réactions numérotées sur Discord. */
+  async publishPoll(botId, pollId) {
+    botId = Number(botId);
+    const inst = this.instances.get(botId);
+    if (!inst || !inst.client.isReady()) throw new Error('Démarre le bot avant de publier un sondage.');
+
+    const poll = db.prepare('SELECT * FROM polls WHERE id = ? AND bot_id = ?').get(pollId, botId);
+    if (!poll) throw new Error('Sondage introuvable.');
+    const options = db.prepare('SELECT * FROM poll_options WHERE poll_id = ? ORDER BY position, id').all(poll.id);
+    if (options.length < 2) throw new Error('Ajoute au moins deux options avant de publier.');
+    if (options.length > 10) throw new Error('10 options maximum (limite des emojis numérotés).');
+
+    const channel = await inst.client.channels.fetch(poll.channel_id).catch(() => null);
+    if (!channel || !channel.isTextBased()) throw new Error('Salon introuvable ou non textuel.');
+
+    const description = options.map((opt, i) => `${NUMBER_EMOJIS[i]} ${opt.label}`).join('\n');
+    const embed = new EmbedBuilder().setColor('#5865F2').setTitle(`📊 ${poll.question}`).setDescription(description);
+
+    let messageId = poll.message_id;
+    let sentMessage = null;
+    if (messageId) {
+      sentMessage = await channel.messages.fetch(messageId).catch(() => null);
+      if (sentMessage) {
+        await sentMessage.edit({ embeds: [embed] });
+      } else {
+        messageId = null;
+      }
+    }
+    if (!messageId) {
+      sentMessage = await channel.send({ embeds: [embed] });
+      messageId = sentMessage.id;
+      db.prepare('UPDATE polls SET message_id = ? WHERE id = ?').run(messageId, poll.id);
+      for (let i = 0; i < options.length; i++) {
+        await sentMessage.react(NUMBER_EMOJIS[i]).catch(() => {});
+      }
+    }
+
+    this._log(botId, 'success', `Sondage "${poll.question}" publié dans <#${poll.channel_id}>.`);
+    return { ok: true, messageId };
+  }
+
+  /**
+   * Cherche une commande "mot-clé n'importe où dans le message" et y répond
+   * si elle correspond. Retourne true si une commande a déclenché (le
+   * message ne doit alors plus être traité comme une commande à préfixe).
+   */
+  async _matchKeywordCommand(botId, message) {
+    const keywordCmds = db
+      .prepare("SELECT * FROM commands WHERE bot_id = ? AND type = 'prefix' AND match_anywhere = 1 AND enabled = 1")
+      .all(botId);
+    if (!keywordCmds.length) return false;
+
+    const lower = message.content.toLowerCase();
+    const hit = keywordCmds.find((c) => c.trigger && lower.includes(c.trigger.toLowerCase()));
+    if (!hit) return false;
+
+    if (hit.allowed_role_id && !this._hasRequiredRole(message.member, hit.allowed_role_id)) return false;
+
+    const inst = this.instances.get(botId);
+    const wait = this._checkCooldown(inst, hit, message.author.id);
+    if (wait > 0) return false;
+
+    try {
+      const ctx = {
+        userMention: `<@${message.author.id}>`,
+        username: message.author.username,
+        serverName: message.guild.name,
+        memberCount: message.guild.memberCount,
+      };
+      const text = this.buildResponse(this._pickVariant(hit.response), ctx);
+      if (hit.response_type === 'embed') {
+        await message.reply({ embeds: [this._buildEmbed(hit, text)] });
+      } else {
+        await message.reply(text);
+      }
+      this._recordUsage(botId, hit.id);
+      this._log(botId, 'info', `${message.author.tag} a déclenché le mot-clé "${hit.trigger}"`);
+    } catch (err) {
+      this._log(botId, 'error', `Erreur sur une commande mot-clé : ${err.message}`);
+    }
+    return true;
   }
 
   async _handleModeration(botId, action, message, args, currentBot, client) {
