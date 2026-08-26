@@ -1,5 +1,6 @@
 'use strict';
 
+require('./src/ensureEnv').ensureEnv();
 require('dotenv').config();
 
 const path = require('path');

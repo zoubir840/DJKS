@@ -59,18 +59,42 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - 🧾 **Salon de logs de modération** : les actions (kick/ban/clear/anti-spam) sont journalisées sur Discord, pas seulement sur le site
 - 🎛️ **Menus de rôles à boutons** : publie un message avec des boutons Discord — chaque membre clique pour obtenir ou retirer un rôle, sans réaction ni commande à taper. Gérable entièrement depuis le site (ajout/suppression de rôles, republication en un clic)
 
-## Démarrage rapide
+## Démarrage rapide (local)
 
 ```bash
 npm install
-cp .env.example .env
-# édite .env : SESSION_SECRET et ENCRYPTION_KEY (voir instructions dans le fichier)
-# optionnel : ANTHROPIC_API_KEY pour activer l'assistant IA et le générateur de commandes
 npm start
 ```
 
-Le site est disponible sur `http://localhost:3000`. En production, définis
-`NODE_ENV=production` pour activer les cookies de session sécurisés (HTTPS).
+C'est tout : si aucun `.env` n'existe, `npm start` en crée un automatiquement
+avec des clés (`SESSION_SECRET`, `ENCRYPTION_KEY`) générées aléatoirement.
+Le site est disponible sur `http://localhost:3000`. Ajoute
+`ANTHROPIC_API_KEY` dans le `.env` généré si tu veux activer l'IA (facultatif,
+voir plus bas). En production, mets `NODE_ENV=production` dans `.env` pour
+activer les cookies de session sécurisés (HTTPS requis devant).
+
+## Lancer sur un VPS (une seule commande)
+
+Sur un VPS Ubuntu/Debian fraîchement cloné :
+
+```bash
+git clone <url-de-ton-fork> djks-bots && cd djks-bots
+bash deploy/install-vps.sh
+```
+
+Ce script installe Node.js si besoin, les dépendances, génère `.env`
+automatiquement, puis configure un **service systemd** qui garde le site en
+ligne en permanence (redémarre seul en cas de crash ou de reboot du
+serveur). Relance-le sans risque après un `git pull` pour mettre à jour le
+service. Une fois terminé, il affiche l'URL publique et les commandes utiles
+(`systemctl status/restart`, `journalctl -f`). Pour du HTTPS avec un nom de
+domaine, voir `deploy/Caddyfile.example`.
+
+## Déployer via Docker (voir plus bas)
+
+Une image Docker prête à l'emploi est aussi publiée automatiquement par
+GitHub Actions — utile sur Railway/Render/Fly ou tout hébergeur à
+conteneurs. Détails dans la section [Déploiement](#déploiement) plus bas.
 
 ## Créer un bot Discord à connecter au site
 
@@ -99,16 +123,19 @@ dans `.env`, par exemple `claude-haiku-4-5` pour réduire les coûts sur un bot
 
 ```
 server.js               Point d'entrée Express : routes, sessions, CSRF, SSE
-src/db.js                Base SQLite (better-sqlite3) + schéma + migrations légères
-src/crypto.js             Chiffrement AES-256-GCM des tokens
-src/csrf.js                 Protection CSRF (jeton par session)
-src/auth.js                  Middlewares d'authentification
-src/ai.js                     Intégration Claude (chat assistant + générateur de commandes)
-src/botManager.js               Cycle de vie des instances discord.js : démarrage/arrêt,
-                                  commandes, modération, IA, menus de rôles, bienvenue/
-                                  départ/rôle auto, anti-spam, logs, invitation
-views/*.ejs                      Pages du site (EJS + CSS fait main, thème sombre)
-public/                            CSS / JS statiques (dont le client SSE des logs)
+src/ensureEnv.js          Génère .env automatiquement au premier lancement s'il est absent
+src/db.js                  Base SQLite (better-sqlite3) + schéma + migrations légères
+src/crypto.js                Chiffrement AES-256-GCM des tokens
+src/csrf.js                   Protection CSRF (jeton par session)
+src/auth.js                    Middlewares d'authentification
+src/ai.js                       Intégration Claude (chat assistant + générateur de commandes)
+src/botManager.js                 Cycle de vie des instances discord.js : démarrage/arrêt,
+                                    commandes, modération, IA, menus de rôles, bienvenue/
+                                    départ/rôle auto, anti-spam, logs, invitation
+views/*.ejs                        Pages du site (EJS + CSS fait main, thème sombre)
+public/                              CSS / JS statiques (dont le client SSE des logs)
+deploy/install-vps.sh                 Installation + service systemd en une commande sur un VPS
+deploy/Caddyfile.example                Reverse proxy HTTPS optionnel (nom de domaine)
 ```
 
 Chaque bot démarré tourne comme une instance `discord.js` dans le process
