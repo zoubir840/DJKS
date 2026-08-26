@@ -19,6 +19,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "express-session": "^1.18.1",
+    "groq-sdk": "^1.6.0",
     "helmet": "^8.3.0"
   }
 }

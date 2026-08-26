@@ -1,34 +1,185 @@
 'use strict';
 
+const Groq = require('groq-sdk');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+// Trois fournisseurs IA supportés, choisis automatiquement selon ce qui est
+// configuré dans .env, par ordre de priorité :
+//
+//   1. Ollama   — 100% gratuit, ZÉRO clé/compte : un modèle tourne en local
+//      (ou sur un autre serveur que tu contrôles). Activé dès que
+//      OLLAMA_MODEL est défini. Voir deploy/install-ollama.sh.
+//   2. Groq     — gratuit, nécessite une clé API sans carte bancaire
+//      (https://console.groq.com/keys). Activé si GROQ_API_KEY est défini.
+//   3. Claude   — payant (Anthropic), pour qui l'a déjà configuré.
+//      Activé si ANTHROPIC_API_KEY est défini.
+//
+// Sans aucun des trois, l'IA est simplement désactivée (le reste du site
+// continue de fonctionner normalement).
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
 const CHAT_MAX_TOKENS = 700;
 const GENERATE_MAX_TOKENS = 800;
 const DISCORD_MESSAGE_LIMIT = 2000;
 
-let client = null;
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
+let groqClient = null;
+let anthropicClient = null;
+
+function activeProvider() {
+  if (OLLAMA_MODEL) return 'ollama';
+  if (process.env.GROQ_API_KEY) return 'groq';
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
+  return null;
 }
 
 function isConfigured() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return activeProvider() !== null;
 }
 
-function friendlyError(err) {
-  if (err instanceof Anthropic.AuthenticationError) {
-    return "Clé API Anthropic invalide côté serveur. Vérifie ANTHROPIC_API_KEY.";
+function providerLabel() {
+  const p = activeProvider();
+  if (p === 'ollama') return `Ollama local (gratuit, sans clé — ${OLLAMA_MODEL})`;
+  if (p === 'groq') return `Groq (gratuit — ${GROQ_MODEL})`;
+  if (p === 'anthropic') return `Claude (Anthropic — ${ANTHROPIC_MODEL})`;
+  return null;
+}
+
+function getGroq() {
+  if (!groqClient) groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groqClient;
+}
+
+function getAnthropic() {
+  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return anthropicClient;
+}
+
+function friendlyError(provider, err) {
+  if (provider === 'ollama') {
+    if (err.code === 'ECONNREFUSED' || /fetch failed/i.test(err.message)) {
+      return `Impossible de contacter Ollama sur ${OLLAMA_BASE_URL}. Vérifie qu'il tourne (service "ollama") et que le modèle "${OLLAMA_MODEL}" est installé (\`ollama pull ${OLLAMA_MODEL}\`).`;
+    }
+    return `Erreur Ollama : ${err.message}`;
   }
-  if (err instanceof Anthropic.RateLimitError) {
-    return 'Trop de requêtes IA en ce moment, réessaie dans un instant.';
+
+  const ErrorsNs = provider === 'groq' ? Groq : Anthropic;
+  if (err instanceof ErrorsNs.AuthenticationError) {
+    return provider === 'groq'
+      ? 'Clé API Groq invalide côté serveur. Vérifie GROQ_API_KEY.'
+      : 'Clé API Anthropic invalide côté serveur. Vérifie ANTHROPIC_API_KEY.';
   }
-  if (err instanceof Anthropic.APIError) {
+  if (err instanceof ErrorsNs.RateLimitError) {
+    return provider === 'groq'
+      ? "Quota gratuit Groq atteint pour l'instant (limite par minute/jour). Réessaie dans un instant."
+      : 'Trop de requêtes IA en ce moment, réessaie dans un instant.';
+  }
+  if (err instanceof ErrorsNs.APIError) {
     return `Erreur IA (${err.status || '?'}) : ${err.message}`;
   }
   return `Erreur IA : ${err.message}`;
+}
+
+async function callOllama(system, messages, { json = false } = {}) {
+  let res;
+  try {
+    res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        ...(json ? { format: 'json' } : {}),
+        messages: [{ role: 'system', content: system }, ...messages],
+        options: { num_predict: json ? GENERATE_MAX_TOKENS : CHAT_MAX_TOKENS },
+      }),
+    });
+  } catch (err) {
+    throw new Error(friendlyError('ollama', err));
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(friendlyError('ollama', new Error(body.error || `HTTP ${res.status}`)));
+  }
+
+  const data = await res.json();
+  return data.message?.content || '';
+}
+
+async function callChat(system, messages) {
+  const provider = activeProvider();
+  if (!provider) throw new Error("L'IA n'est pas configurée sur ce serveur (aucun OLLAMA_MODEL, GROQ_API_KEY ni ANTHROPIC_API_KEY).");
+
+  if (provider === 'ollama') return callOllama(system, messages);
+
+  if (provider === 'groq') {
+    try {
+      const res = await getGroq().chat.completions.create({
+        model: GROQ_MODEL,
+        max_tokens: CHAT_MAX_TOKENS,
+        messages: [{ role: 'system', content: system }, ...messages],
+      });
+      return res.choices[0]?.message?.content || '';
+    } catch (err) {
+      throw new Error(friendlyError('groq', err));
+    }
+  }
+
+  try {
+    const res = await getAnthropic().messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: CHAT_MAX_TOKENS,
+      system,
+      messages,
+    });
+    return res.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+  } catch (err) {
+    throw new Error(friendlyError('anthropic', err));
+  }
+}
+
+async function callJson(system, userText) {
+  const provider = activeProvider();
+  if (!provider) throw new Error("L'IA n'est pas configurée sur ce serveur (aucun OLLAMA_MODEL, GROQ_API_KEY ni ANTHROPIC_API_KEY).");
+
+  if (provider === 'ollama') return callOllama(system, [{ role: 'user', content: userText }], { json: true });
+
+  if (provider === 'groq') {
+    try {
+      const res = await getGroq().chat.completions.create({
+        model: GROQ_MODEL,
+        max_tokens: GENERATE_MAX_TOKENS,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userText },
+        ],
+      });
+      return res.choices[0]?.message?.content || '';
+    } catch (err) {
+      throw new Error(friendlyError('groq', err));
+    }
+  }
+
+  try {
+    const res = await getAnthropic().messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: GENERATE_MAX_TOKENS,
+      system,
+      messages: [{ role: 'user', content: userText }],
+    });
+    return res.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+  } catch (err) {
+    throw new Error(friendlyError('anthropic', err));
+  }
 }
 
 /**
@@ -38,29 +189,10 @@ function friendlyError(err) {
  * (tronqué à la limite de Discord).
  */
 async function chat(persona, history, userMessage) {
-  const anthropic = getClient();
-  if (!anthropic) throw new Error("L'IA n'est pas configurée sur ce serveur (ANTHROPIC_API_KEY manquante).");
-
+  const system = `${persona}\n\nTu réponds dans un salon Discord : reste concis (quelques phrases maximum), utilise le markdown Discord si utile, n'utilise jamais plus de ${DISCORD_MESSAGE_LIMIT} caractères.`;
   const messages = [...history, { role: 'user', content: userMessage }];
 
-  let response;
-  try {
-    response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: CHAT_MAX_TOKENS,
-      system: `${persona}\n\nTu réponds dans un salon Discord : reste concis (quelques phrases maximum), utilise le markdown Discord si utile, n'utilise jamais plus de ${DISCORD_MESSAGE_LIMIT} caractères.`,
-      messages,
-    });
-  } catch (err) {
-    throw new Error(friendlyError(err));
-  }
-
-  const text = response.content
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
-
+  const text = (await callChat(system, messages)).trim();
   const safeText = text || "Je n'ai pas de réponse à ça pour le moment.";
   return safeText.length > DISCORD_MESSAGE_LIMIT ? `${safeText.slice(0, DISCORD_MESSAGE_LIMIT - 1)}…` : safeText;
 }
@@ -71,9 +203,6 @@ async function chat(persona, history, userMessage) {
  * attendu par le formulaire de création de commande du site.
  */
 async function generateCommand(description, botContext) {
-  const anthropic = getClient();
-  if (!anthropic) throw new Error("L'IA n'est pas configurée sur ce serveur (ANTHROPIC_API_KEY manquante).");
-
   const system = `Tu configures des commandes pour un bot Discord "sur mesure" à partir d'une description en langage naturel.
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown, correspondant exactement à ce schéma :
 {
@@ -88,24 +217,7 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises m
 }
 Le préfixe de ce bot est "${botContext.prefix}". Choisis "slash" seulement si la description mentionne explicitement une commande slash, sinon "prefix". Sois créatif mais reste fidèle à la demande.`;
 
-  let response;
-  try {
-    response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: GENERATE_MAX_TOKENS,
-      system,
-      messages: [{ role: 'user', content: description }],
-    });
-  } catch (err) {
-    throw new Error(friendlyError(err));
-  }
-
-  const text = response.content
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
-
+  const text = (await callJson(system, description)).trim();
   const jsonText = extractJson(text);
   let parsed;
   try {
@@ -150,4 +262,4 @@ function normalizeGeneratedCommand(raw) {
   };
 }
 
-module.exports = { isConfigured, chat, generateCommand, MODEL };
+module.exports = { isConfigured, activeProvider, providerLabel, chat, generateCommand };

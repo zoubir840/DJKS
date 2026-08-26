@@ -24,7 +24,7 @@ function ensureEnv() {
 
   fs.writeFileSync(ENV_PATH, content, { mode: 0o600 });
   console.log('[setup] Aucun .env trouvé : un fichier .env a été créé avec des clés générées automatiquement.');
-  console.log('[setup] Ajoute ANTHROPIC_API_KEY dans .env si tu veux activer les fonctions IA (optionnel).');
+  console.log('[setup] IA (optionnelle) : bash deploy/install-ollama.sh (gratuit, sans clé) ou GROQ_API_KEY dans .env (gratuit).');
 }
 
 module.exports = { ensureEnv };

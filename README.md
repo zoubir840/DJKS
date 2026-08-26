@@ -68,10 +68,10 @@ npm start
 
 C'est tout : si aucun `.env` n'existe, `npm start` en crée un automatiquement
 avec des clés (`SESSION_SECRET`, `ENCRYPTION_KEY`) générées aléatoirement.
-Le site est disponible sur `http://localhost:3000`. Ajoute
-`ANTHROPIC_API_KEY` dans le `.env` généré si tu veux activer l'IA (facultatif,
-voir plus bas). En production, mets `NODE_ENV=production` dans `.env` pour
-activer les cookies de session sécurisés (HTTPS requis devant).
+Le site est disponible sur `http://localhost:3000`. Pour activer l'IA
+(facultatif, gratuite), voir plus bas. En production, mets
+`NODE_ENV=production` dans `.env` pour activer les cookies de session
+sécurisés (HTTPS requis devant).
 
 ## Lancer sur un VPS (une seule commande)
 
@@ -89,6 +89,12 @@ serveur). Relance-le sans risque après un `git pull` pour mettre à jour le
 service. Une fois terminé, il affiche l'URL publique et les commandes utiles
 (`systemctl status/restart`, `journalctl -f`). Pour du HTTPS avec un nom de
 domaine, voir `deploy/Caddyfile.example`.
+
+Pour ajouter l'IA gratuite et sans clé directement sur ce même VPS :
+
+```bash
+bash deploy/install-ollama.sh
+```
 
 ## Déployer via Docker (voir plus bas)
 
@@ -109,15 +115,47 @@ Pour trouver l'ID d'un salon ou d'un rôle Discord : active le **Mode
 développeur** dans Discord (Paramètres → Avancés), puis clic droit sur le
 salon/rôle → **Copier l'ID**.
 
-## Activer l'IA (optionnel)
+## Activer l'IA (optionnel, gratuit)
 
-1. Récupère une clé API sur [console.anthropic.com](https://console.anthropic.com/settings/keys).
-2. Ajoute `ANTHROPIC_API_KEY=sk-ant-...` dans `.env` puis redémarre le serveur.
-3. Sur la page d'un bot : configure l'**Assistant IA** (personnalité, mot déclencheur, quota quotidien) et/ou utilise le **générateur de commandes IA** au-dessus du formulaire de création de commande.
+Trois options, essayées automatiquement dans cet ordre — la première trouvée
+configurée l'emporte :
 
-Modèle utilisé par défaut : `claude-opus-5` (modifiable via `ANTHROPIC_MODEL`
-dans `.env`, par exemple `claude-haiku-4-5` pour réduire les coûts sur un bot
-à fort trafic).
+### Option 1 — 100% gratuite, SANS AUCUNE CLÉ ni compte (Ollama, en local)
+
+```bash
+bash deploy/install-ollama.sh
+```
+
+Installe [Ollama](https://ollama.com) et un petit modèle (`llama3.2:3b` par
+défaut, ~2 Go) qui tourne directement sur ton serveur — aucun compte, aucune
+carte bancaire, aucune limite d'usage. **Testé et validé pour ce projet**
+(chat et générateur de commandes fonctionnent). Recommandé avec au moins
+4 Go de RAM libres sur le serveur ; les réponses sont plus lentes qu'avec
+une API cloud (quelques secondes) et un peu moins fines qu'un grand modèle,
+mais totalement gratuites et privées. Choisis un autre modèle en argument
+(`bash deploy/install-ollama.sh qwen2.5:3b`) si tu veux essayer autre chose.
+
+### Option 2 — gratuite, avec une clé API (Groq, dans le cloud)
+
+1. Crée un compte gratuit et une clé sur [console.groq.com/keys](https://console.groq.com/keys) (aucune carte bancaire requise).
+2. Ajoute `GROQ_API_KEY=gsk_...` dans `.env` puis redémarre le serveur.
+
+Plus rapide qu'Ollama et ne consomme aucune ressource sur ton serveur, mais
+nécessite une inscription et une connexion Internet vers Groq.
+
+### Option 3 — payante (Claude / Anthropic)
+
+Pour qui veut la meilleure qualité de réponse et a déjà une clé : ajoute
+`ANTHROPIC_API_KEY=sk-ant-...` dans `.env` (utilisée seulement si les deux
+options ci-dessus sont vides). Modèle par défaut `claude-opus-5`,
+modifiable via `ANTHROPIC_MODEL`.
+
+### Une fois configuré
+
+Sur la page d'un bot : configure l'**Assistant IA** (personnalité, mot
+déclencheur, quota quotidien) et/ou utilise le **générateur de commandes
+IA** au-dessus du formulaire de création de commande. Le fournisseur actif
+est affiché directement dans cette section.
 
 ## Architecture
 
@@ -135,7 +173,8 @@ src/botManager.js                 Cycle de vie des instances discord.js : démar
 views/*.ejs                        Pages du site (EJS + CSS fait main, thème sombre)
 public/                              CSS / JS statiques (dont le client SSE des logs)
 deploy/install-vps.sh                 Installation + service systemd en une commande sur un VPS
-deploy/Caddyfile.example                Reverse proxy HTTPS optionnel (nom de domaine)
+deploy/install-ollama.sh                IA locale 100% gratuite et sans clé (Ollama)
+deploy/Caddyfile.example                  Reverse proxy HTTPS optionnel (nom de domaine)
 ```
 
 Chaque bot démarré tourne comme une instance `discord.js` dans le process
@@ -171,10 +210,16 @@ docker run -d \
   -p 3000:3000 \
   -e SESSION_SECRET=... \
   -e ENCRYPTION_KEY=... \
-  -e ANTHROPIC_API_KEY=...   # optionnel, pour l'IA \
+  -e GROQ_API_KEY=... \
   -v djks-data:/app/data \
   ghcr.io/<ton-compte>/<ton-repo>:latest
 ```
+
+(`GROQ_API_KEY` est optionnel, pour l'IA gratuite — voir la section
+« Activer l'IA » plus haut. Ollama n'est pas utilisable
+depuis ce conteneur sans installation supplémentaire ; pour l'option 100%
+sans clé, préfère `deploy/install-vps.sh` + `deploy/install-ollama.sh`
+directement sur le serveur.)
 
 Ou avec `docker-compose.yml` (fourni à la racine du projet) :
 
@@ -196,7 +241,8 @@ ou tirer l'image publiée sur `ghcr.io` ci-dessus. Ils gèrent le HTTPS pour
 toi, donc `NODE_ENV=production` fonctionne directement. Dans tous les cas,
 il te faudra :
 - définir les variables d'environnement `SESSION_SECRET`, `ENCRYPTION_KEY`
-  (et `ANTHROPIC_API_KEY` si tu veux l'IA),
+  (et `GROQ_API_KEY`, gratuit, si tu veux l'IA — Ollama n'est pas adapté à
+  ce type de plateforme sans GPU/RAM dédiée),
 - attacher un **volume/disque persistant** sur `/app/data` (sinon la base
   SQLite — donc tes comptes et bots — repart de zéro à chaque redéploiement).
 

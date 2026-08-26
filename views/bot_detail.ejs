@@ -153,9 +153,12 @@
         </div>
         <% if (!aiConfigured) { %>
           <p class="alert alert-error" style="margin-top:0;">
-            L'IA n'est pas configurée sur ce serveur. Définis <code>ANTHROPIC_API_KEY</code> dans le <code>.env</code> de l'hébergeur pour activer
-            l'assistant IA et le générateur de commandes.
+            L'IA n'est pas configurée sur ce serveur. Deux options gratuites : <code>bash deploy/install-ollama.sh</code>
+            (100% gratuit, sans aucune clé, tourne en local) ou une clé <code>GROQ_API_KEY</code> gratuite sur
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> dans le <code>.env</code> de l'hébergeur.
           </p>
+        <% } else { %>
+          <p class="hint" style="margin-top:0;">Propulsé par <strong><%= aiProviderLabel %></strong>.</p>
         <% } %>
         <form method="post" action="/bots/<%= bot.id %>/ai" class="settings-form">
           <%- include('partials/csrf') %>
@@ -291,7 +294,7 @@
             </div>
           </label>
           <p class="hint" id="ai-generate-status">
-            <% if (!aiConfigured) { %>Configure <code>ANTHROPIC_API_KEY</code> côté serveur pour activer ce générateur.<% } %>
+            <% if (!aiConfigured) { %>Lance <code>deploy/install-ollama.sh</code> (gratuit, sans clé) ou configure <code>GROQ_API_KEY</code> côté serveur pour activer ce générateur.<% } %>
           </p>
         </div>
 

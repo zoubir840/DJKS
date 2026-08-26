@@ -307,6 +307,7 @@ app.get('/bots/:id', requireAuth, (req, res) => {
     commands,
     roleMenus,
     aiConfigured: ai.isConfigured(),
+    aiProviderLabel: ai.providerLabel(),
     aiUsageToday: bot.ai_usage_date === today ? bot.ai_usage_count : 0,
     maskedToken,
     logs: botManager.getLogs(bot.id),
@@ -463,7 +464,7 @@ app.post('/bots/:id/commands/generate', requireAuth, aiLimiter, async (req, res)
 
   const description = String((req.body && req.body.description) || '').trim();
   if (!description) return res.status(400).json({ error: 'Décris la commande que tu veux créer.' });
-  if (!ai.isConfigured()) return res.status(400).json({ error: "L'IA n'est pas configurée sur ce serveur (ANTHROPIC_API_KEY manquante)." });
+  if (!ai.isConfigured()) return res.status(400).json({ error: "L'IA n'est pas configurée sur ce serveur (GROQ_API_KEY ou ANTHROPIC_API_KEY manquante)." });
 
   try {
     const generated = await ai.generateCommand(description, { prefix: bot.prefix });
