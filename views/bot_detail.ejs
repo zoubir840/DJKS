@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head><%- include('partials/head', { title: bot.name }) %></head>
-<body>
+<body data-csrf="<%= csrfToken %>">
   <%- include('partials/nav', { user }) %>
   <main class="page">
     <div class="page-header">
@@ -108,6 +108,77 @@
       </section>
 
       <section class="card">
+        <div class="card-header"><h2>Rôle automatique</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/autorole" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.autorole_enabled ? 'checked' : '' %> /> Attribuer automatiquement un rôle aux nouveaux membres
+          </label>
+          <label>ID du rôle
+            <input type="text" name="role_id" value="<%= bot.autorole_role_id || '' %>" placeholder="Paramètres du serveur → Rôles → Copier l'ID" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Anti-spam / mots interdits</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/antispam" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.antispam_enabled ? 'checked' : '' %> /> Supprimer automatiquement les messages contenant un mot interdit
+          </label>
+          <label>Mots interdits (séparés par des virgules)
+            <input type="text" name="banned_words" value="<%= bot.banned_words %>" placeholder="mot1, mot2, expression interdite" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Salon de logs de modération</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/modlog" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label>ID du salon (kick/ban/clear/anti-spam y sont journalisés)
+            <input type="text" name="channel_id" value="<%= bot.modlog_channel_id || '' %>" placeholder="Laisse vide pour désactiver" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>🤖 Assistant IA</h2>
+          <% if (bot.ai_enabled) { %><span class="hint" style="margin:0;"><%= aiUsageToday %>/<%= bot.ai_daily_limit %> aujourd'hui</span><% } %>
+        </div>
+        <% if (!aiConfigured) { %>
+          <p class="alert alert-error" style="margin-top:0;">
+            L'IA n'est pas configurée sur ce serveur. Définis <code>ANTHROPIC_API_KEY</code> dans le <code>.env</code> de l'hébergeur pour activer
+            l'assistant IA et le générateur de commandes.
+          </p>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/ai" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.ai_enabled ? 'checked' : '' %> <%= aiConfigured ? '' : 'disabled' %> />
+            Activer l'assistant IA (répond quand on le mentionne ou via <code><%= bot.prefix %><%= bot.ai_trigger %></code>)
+          </label>
+          <label>Personnalité / instructions (sur mesure pour ce serveur)
+            <textarea name="persona" rows="3"><%= bot.ai_persona %></textarea>
+          </label>
+          <div class="command-form-row">
+            <label>Mot déclencheur (<%= bot.prefix %>...)
+              <input type="text" name="trigger" value="<%= bot.ai_trigger %>" maxlength="20" />
+            </label>
+            <label>Limite de messages / jour
+              <input type="number" name="daily_limit" value="<%= bot.ai_daily_limit %>" min="1" max="5000" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary" <%= aiConfigured ? '' : 'disabled' %>>Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
         <div class="card-header"><h2>Message de bienvenue</h2></div>
         <form method="post" action="/bots/<%= bot.id %>/welcome" class="settings-form">
           <%- include('partials/csrf') %>
@@ -142,29 +213,109 @@
         </form>
       </section>
 
+      <section class="card">
+        <div class="card-header"><h2>Menus de rôles (boutons Discord)</h2></div>
+        <p class="hint" style="margin-top:0;">Publie un message avec des boutons : chaque membre clique pour obtenir ou retirer un rôle, sans réaction ni commande.</p>
+
+        <form method="post" action="/bots/<%= bot.id %>/role-menus" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>ID du salon
+              <input type="text" name="channel_id" required placeholder="Clic droit sur le salon → Copier l'ID" />
+            </label>
+            <label>Titre
+              <input type="text" name="title" placeholder="Choisis tes rôles" />
+            </label>
+          </div>
+          <label>Description
+            <input type="text" name="description" placeholder="Clique sur un bouton pour obtenir un rôle." />
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer un menu de rôles</button>
+        </form>
+
+        <% if (roleMenus.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% roleMenus.forEach(menu => { %>
+              <li class="command-item">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= menu.title %></span>
+                  <% if (menu.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <p class="command-response">Salon <code>#<%= menu.channel_id %></code> — <%= menu.description %></p>
+                  <div class="role-menu-options">
+                    <% menu.options.forEach(opt => { %>
+                      <span class="role-chip">
+                        <%= opt.emoji %> <%= opt.label %>
+                        <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/options/<%= opt.id %>/delete" class="inline-form">
+                          <%- include('partials/csrf') %>
+                          <button type="submit" class="role-chip-remove" title="Retirer">✕</button>
+                        </form>
+                      </span>
+                    <% }) %>
+                    <% if (!menu.options.length) { %><span class="hint">Aucun rôle pour l'instant.</span><% } %>
+                  </div>
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/options" class="role-option-form">
+                    <%- include('partials/csrf') %>
+                    <input type="text" name="label" placeholder="Nom affiché" required maxlength="80" />
+                    <input type="text" name="emoji" placeholder="Emoji (optionnel)" maxlength="8" />
+                    <input type="text" name="role_id" placeholder="ID du rôle" required />
+                    <button type="submit" class="btn btn-ghost btn-sm">+ Ajouter</button>
+                  </form>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/publish" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-primary btn-sm"><%= menu.message_id ? 'Republier' : 'Publier' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce menu du site ? Le message Discord existant restera affiché.');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
       <section class="card command-card">
         <div class="card-header">
           <h2>Commandes (<%= commands.length %>)</h2>
+        </div>
+
+        <div class="ai-generator">
+          <label>✨ Générer une commande avec l'IA (décris ce que tu veux)
+            <div class="ai-generator-row">
+              <input type="text" id="ai-generate-input" placeholder="Ex : une commande /avatar qui affiche l'avatar de l'utilisateur" <%= aiConfigured ? '' : 'disabled' %> />
+              <button type="button" id="ai-generate-btn" class="btn btn-primary" <%= aiConfigured ? '' : 'disabled' %>>Générer</button>
+            </div>
+          </label>
+          <p class="hint" id="ai-generate-status">
+            <% if (!aiConfigured) { %>Configure <code>ANTHROPIC_API_KEY</code> côté serveur pour activer ce générateur.<% } %>
+          </p>
         </div>
 
         <form method="post" action="/bots/<%= bot.id %>/commands" class="command-form" id="command-form">
           <%- include('partials/csrf') %>
           <div class="command-form-row">
             <label>Type
-              <select name="type">
+              <select name="type" id="command-type-select">
                 <option value="prefix">Préfixe (<%= bot.prefix %>bonjour)</option>
                 <option value="slash">Slash (/bonjour)</option>
               </select>
             </label>
             <label>Déclencheur
-              <input type="text" name="trigger" required placeholder="bonjour" pattern="[a-zA-Z0-9_-]+" />
+              <input type="text" name="trigger" id="command-trigger-input" required placeholder="bonjour" pattern="[a-zA-Z0-9_-]+" />
             </label>
             <label>Cooldown (secondes)
-              <input type="number" name="cooldown_seconds" min="0" max="3600" value="0" />
+              <input type="number" name="cooldown_seconds" id="command-cooldown-input" min="0" max="3600" value="0" />
             </label>
           </div>
           <label>Description (affichée dans <%= bot.prefix %>help et sur Discord pour les commandes slash)
-            <input type="text" name="description" placeholder="Dit bonjour à l'utilisateur" />
+            <input type="text" name="description" id="command-description-input" placeholder="Dit bonjour à l'utilisateur" />
+          </label>
+          <label>Rôle requis (optionnel — laisser vide = tout le monde)
+            <input type="text" name="allowed_role_id" placeholder="ID du rôle Discord" />
           </label>
           <label>Format de réponse
             <select name="response_type" id="response-type-select">
@@ -174,16 +325,16 @@
           </label>
           <div id="embed-fields" class="command-form-row" style="display:none;">
             <label>Titre de l'embed
-              <input type="text" name="embed_title" placeholder="Titre (optionnel)" />
+              <input type="text" name="embed_title" id="command-embed-title-input" placeholder="Titre (optionnel)" />
             </label>
             <label>Couleur
-              <input type="color" name="embed_color" value="#5865F2" />
+              <input type="color" name="embed_color" id="command-embed-color-input" value="#5865F2" />
             </label>
           </div>
           <label>Réponse
-            <textarea name="response" required placeholder="Bonjour {user} ! Bienvenue sur {server} 👋" rows="2"></textarea>
+            <textarea name="response" id="command-response-input" required placeholder="Bonjour {user} ! Bienvenue sur {server} 👋" rows="2"></textarea>
           </label>
-          <p class="hint">Variables disponibles : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code></p>
+          <p class="hint">Variables : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code> — sépare plusieurs réponses par <code>|||</code> pour qu'une soit tirée au hasard.</p>
           <button type="submit" class="btn btn-primary">+ Ajouter la commande</button>
         </form>
 
@@ -197,6 +348,7 @@
                   <span class="command-badge command-badge-<%= cmd.type %>"><%= cmd.type === 'slash' ? '/' : bot.prefix %><%= cmd.trigger %></span>
                   <% if (cmd.response_type === 'embed') { %><span class="command-badge command-badge-embed">embed</span><% } %>
                   <% if (cmd.cooldown_seconds > 0) { %><span class="command-badge command-badge-cooldown">⏳ <%= cmd.cooldown_seconds %>s</span><% } %>
+                  <% if (cmd.allowed_role_id) { %><span class="command-badge command-badge-cooldown">🔒 rôle requis</span><% } %>
                   <span class="command-desc"><%= cmd.description || 'Sans description' %></span>
                   <p class="command-response"><%= cmd.response %></p>
                   <p class="command-uses"><%= cmd.uses_count %> utilisation(s)<% if (cmd.last_used_at) { %> · dernière le <%= new Date(cmd.last_used_at).toLocaleString('fr-FR') %><% } %></p>

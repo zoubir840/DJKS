@@ -1,4 +1,6 @@
 (function () {
+  const csrfToken = document.body.dataset.csrf || '';
+
   // --- Formulaire de commande : affiche les champs "embed" si pertinent ---
   const typeSelect = document.getElementById('response-type-select');
   const embedFields = document.getElementById('embed-fields');
@@ -6,6 +8,51 @@
     const sync = () => { embedFields.style.display = typeSelect.value === 'embed' ? 'grid' : 'none'; };
     typeSelect.addEventListener('change', sync);
     sync();
+  }
+
+  // --- Générateur de commande par IA ---
+  const genBtn = document.getElementById('ai-generate-btn');
+  const genInput = document.getElementById('ai-generate-input');
+  const genStatus = document.getElementById('ai-generate-status');
+  if (genBtn && genInput) {
+    const botIdForGen = document.getElementById('log-console')?.dataset.botId;
+    genBtn.addEventListener('click', async () => {
+      const description = genInput.value.trim();
+      if (!description) {
+        genStatus.textContent = 'Décris la commande que tu veux avant de générer.';
+        return;
+      }
+      genBtn.disabled = true;
+      genBtn.textContent = 'Génération…';
+      genStatus.textContent = "L'IA réfléchit à ta commande…";
+      try {
+        const res = await fetch(`/bots/${botIdForGen}/commands/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description, _csrf: csrfToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Échec de la génération.');
+
+        document.getElementById('command-type-select').value = data.type;
+        document.getElementById('command-trigger-input').value = data.trigger;
+        document.getElementById('command-cooldown-input').value = data.cooldown_seconds || 0;
+        document.getElementById('command-description-input').value = data.description || '';
+        document.getElementById('response-type-select').value = data.response_type;
+        document.getElementById('command-embed-title-input').value = data.embed_title || '';
+        document.getElementById('command-embed-color-input').value = data.embed_color || '#5865F2';
+        document.getElementById('command-response-input').value = data.response || '';
+        if (typeSelect) typeSelect.dispatchEvent(new Event('change'));
+
+        genStatus.textContent = '✅ Commande générée ! Vérifie les champs ci-dessous puis clique sur "Ajouter la commande".';
+        document.getElementById('command-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (err) {
+        genStatus.textContent = '❌ ' + err.message;
+      } finally {
+        genBtn.disabled = false;
+        genBtn.textContent = 'Générer';
+      }
+    });
   }
 
   // --- Console de logs en direct + statut + serveurs (Server-Sent Events) ---

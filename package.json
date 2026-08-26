@@ -9,6 +9,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "bcryptjs": "^3.0.2",
     "better-sqlite3": "^13.0.3",
     "better-sqlite3-session-store": "^0.1.0",

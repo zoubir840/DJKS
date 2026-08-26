@@ -15,6 +15,7 @@ const { encrypt, decrypt, maskToken } = require('./src/crypto');
 const { requireAuth, attachUser } = require('./src/auth');
 const { ensureToken, verifyToken } = require('./src/csrf');
 const botManager = require('./src/botManager');
+const ai = require('./src/ai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,7 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(
@@ -87,6 +89,14 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Trop de tentatives. Réessaie dans quelques minutes.',
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de générations IA. Réessaie dans quelques minutes.' },
 });
 
 // --------------------------------------------------------------------------
@@ -280,11 +290,24 @@ app.get('/bots/:id', requireAuth, (req, res) => {
   const bot = loadOwnedBot(req, res);
   if (!bot) return;
   const commands = db.prepare('SELECT * FROM commands WHERE bot_id = ? ORDER BY created_at DESC').all(bot.id);
-  const token = decrypt(bot.token_encrypted);
+  const roleMenus = db.prepare('SELECT * FROM role_menus WHERE bot_id = ? ORDER BY created_at DESC').all(bot.id);
+  roleMenus.forEach((menu) => {
+    menu.options = db.prepare('SELECT * FROM role_menu_options WHERE role_menu_id = ? ORDER BY position, id').all(menu.id);
+  });
+  let maskedToken;
+  try {
+    maskedToken = maskToken(decrypt(bot.token_encrypted));
+  } catch (err) {
+    maskedToken = 'illisible (ENCRYPTION_KEY a changé)';
+  }
+  const today = new Date().toISOString().slice(0, 10);
   res.render('bot_detail', {
     bot,
     commands,
-    maskedToken: maskToken(token),
+    roleMenus,
+    aiConfigured: ai.isConfigured(),
+    aiUsageToday: bot.ai_usage_date === today ? bot.ai_usage_count : 0,
+    maskedToken,
     logs: botManager.getLogs(bot.id),
     guilds: botManager.getGuilds(bot.id),
     inviteUrl: bot.client_id ? botManager.inviteUrl(bot.client_id) : null,
@@ -377,6 +400,171 @@ app.post('/bots/:id/leave', requireAuth, (req, res) => {
   res.redirect(`/bots/${bot.id}`);
 });
 
+app.post('/bots/:id/autorole', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const roleId = String(req.body.role_id || '').trim();
+  db.prepare('UPDATE bots SET autorole_enabled = ?, autorole_role_id = ? WHERE id = ?').run(enabled, roleId || null, bot.id);
+  req.setFlash('success', 'Rôle automatique enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/antispam', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const words = String(req.body.banned_words || '')
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .join(', ');
+  db.prepare('UPDATE bots SET antispam_enabled = ?, banned_words = ? WHERE id = ?').run(enabled, words, bot.id);
+  req.setFlash('success', 'Filtre anti-spam enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/modlog', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const channelId = String(req.body.channel_id || '').trim();
+  db.prepare('UPDATE bots SET modlog_channel_id = ? WHERE id = ?').run(channelId || null, bot.id);
+  req.setFlash('success', 'Salon de logs enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/ai', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const enabled = req.body.enabled ? 1 : 0;
+  const persona = String(req.body.persona || '').trim() || bot.ai_persona;
+  const trigger = String(req.body.trigger || 'ai')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 20) || 'ai';
+  const dailyLimit = Math.min(Math.max(parseInt(req.body.daily_limit, 10) || 150, 1), 5000);
+  db.prepare('UPDATE bots SET ai_enabled = ?, ai_persona = ?, ai_trigger = ?, ai_daily_limit = ? WHERE id = ?').run(
+    enabled,
+    persona,
+    trigger,
+    dailyLimit,
+    bot.id
+  );
+  req.setFlash('success', 'Assistant IA enregistré.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+// --- Générateur de commandes par IA (retourne du JSON, consommé en AJAX) ---
+app.post('/bots/:id/commands/generate', requireAuth, aiLimiter, async (req, res) => {
+  const bot = db.prepare('SELECT * FROM bots WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!bot) return res.status(404).json({ error: 'Bot introuvable.' });
+
+  const description = String((req.body && req.body.description) || '').trim();
+  if (!description) return res.status(400).json({ error: 'Décris la commande que tu veux créer.' });
+  if (!ai.isConfigured()) return res.status(400).json({ error: "L'IA n'est pas configurée sur ce serveur (ANTHROPIC_API_KEY manquante)." });
+
+  try {
+    const generated = await ai.generateCommand(description, { prefix: bot.prefix });
+    res.json(generated);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// --------------------------------------------------------------------------
+// Menus de rôles (boutons Discord)
+// --------------------------------------------------------------------------
+
+function loadOwnedRoleMenu(req, res, bot) {
+  const menu = db.prepare('SELECT * FROM role_menus WHERE id = ? AND bot_id = ?').get(req.params.mid, bot.id);
+  if (!menu) {
+    res.status(404).end();
+    return null;
+  }
+  return menu;
+}
+
+app.post('/bots/:id/role-menus', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const channelId = String(req.body.channel_id || '').trim();
+  const title = String(req.body.title || '').trim() || 'Choisis tes rôles';
+  const description = String(req.body.description || '').trim() || 'Clique sur un bouton pour obtenir ou retirer le rôle correspondant.';
+  if (!channelId) {
+    req.setFlash('error', "L'ID du salon est obligatoire pour créer un menu de rôles.");
+    return res.redirect(`/bots/${bot.id}`);
+  }
+  db.prepare('INSERT INTO role_menus (bot_id, channel_id, title, description) VALUES (?, ?, ?, ?)').run(bot.id, channelId, title, description);
+  req.setFlash('success', 'Menu de rôles créé. Ajoute des rôles puis publie-le.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/role-menus/:mid/delete', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const menu = loadOwnedRoleMenu(req, res, bot);
+  if (!menu) return;
+  db.prepare('DELETE FROM role_menus WHERE id = ?').run(menu.id);
+  req.setFlash('success', 'Menu de rôles supprimé (le message Discord existant reste tel quel).');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/role-menus/:mid/options', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const menu = loadOwnedRoleMenu(req, res, bot);
+  if (!menu) return;
+
+  const label = String(req.body.label || '').trim();
+  const roleId = String(req.body.role_id || '').trim();
+  const emoji = String(req.body.emoji || '').trim();
+  if (!label || !roleId) {
+    req.setFlash('error', 'Le nom et l\'ID du rôle sont obligatoires.');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+  const count = db.prepare('SELECT COUNT(*) AS n FROM role_menu_options WHERE role_menu_id = ?').get(menu.id).n;
+  if (count >= 25) {
+    req.setFlash('error', 'Un menu de rôles ne peut pas dépasser 25 rôles (limite Discord).');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+  db.prepare('INSERT INTO role_menu_options (role_menu_id, label, emoji, role_id, position) VALUES (?, ?, ?, ?, ?)').run(
+    menu.id,
+    label.slice(0, 80),
+    emoji.slice(0, 8),
+    roleId,
+    count
+  );
+  req.setFlash('success', 'Rôle ajouté au menu. Publie (ou republie) le menu pour appliquer.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/role-menus/:mid/options/:oid/delete', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const menu = loadOwnedRoleMenu(req, res, bot);
+  if (!menu) return;
+  const option = db.prepare('SELECT * FROM role_menu_options WHERE id = ? AND role_menu_id = ?').get(req.params.oid, menu.id);
+  if (!option) return res.status(404).end();
+  db.prepare('DELETE FROM role_menu_options WHERE id = ?').run(option.id);
+  req.setFlash('success', 'Rôle retiré du menu. Republie le menu pour appliquer.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/role-menus/:mid/publish', requireAuth, async (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const menu = loadOwnedRoleMenu(req, res, bot);
+  if (!menu) return;
+  try {
+    await botManager.publishRoleMenu(bot.id, menu.id);
+    req.setFlash('success', 'Menu de rôles publié sur Discord.');
+  } catch (err) {
+    req.setFlash('error', err.message);
+  }
+  res.redirect(`/bots/${bot.id}`);
+});
+
 app.post('/bots/:id/delete', requireAuth, async (req, res) => {
   const bot = loadOwnedBot(req, res);
   if (!bot) return;
@@ -462,6 +650,7 @@ app.post('/bots/:id/commands', requireAuth, (req, res) => {
   const embedTitle = String(req.body.embed_title || '').trim();
   const embedColor = /^#[0-9a-fA-F]{6}$/.test(req.body.embed_color || '') ? req.body.embed_color : '#5865F2';
   const cooldown = Math.min(Math.max(parseInt(req.body.cooldown_seconds, 10) || 0, 0), 3600);
+  const allowedRoleId = String(req.body.allowed_role_id || '').trim() || null;
 
   if (!trigger || !response) {
     req.setFlash('error', 'Le déclencheur et la réponse sont obligatoires.');
@@ -471,15 +660,15 @@ app.post('/bots/:id/commands', requireAuth, (req, res) => {
     req.setFlash('error', 'Le déclencheur ne peut contenir que des lettres, chiffres, - et _.');
     return res.redirect(`/bots/${bot.id}`);
   }
-  if (['help', 'kick', 'ban', 'clear'].includes(trigger)) {
-    req.setFlash('error', `"${trigger}" est réservé (aide ou modération intégrée). Choisis un autre nom.`);
+  if (['help', 'kick', 'ban', 'clear'].includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
+    req.setFlash('error', `"${trigger}" est réservé (aide, modération ou assistant IA). Choisis un autre nom.`);
     return res.redirect(`/bots/${bot.id}`);
   }
 
   db.prepare(
-    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(bot.id, trigger, type, description, response, responseType, embedTitle, embedColor, cooldown);
+    `INSERT INTO commands (bot_id, trigger, type, description, response, response_type, embed_title, embed_color, cooldown_seconds, allowed_role_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(bot.id, trigger, type, description, response, responseType, embedTitle, embedColor, cooldown, allowedRoleId);
 
   req.setFlash('success', 'Commande ajoutée.');
   res.redirect(`/bots/${bot.id}`);

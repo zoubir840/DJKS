@@ -252,6 +252,45 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .command-uses { margin: 6px 0 0; font-size: 0.76rem; color: #5b606e; }
 .command-item-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 
+/* Générateur IA */
+.ai-generator {
+  background: linear-gradient(135deg, rgba(88,101,242,0.12), rgba(240,178,50,0.08));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.ai-generator label { font-size: 0.85rem; color: var(--text-dim); }
+.ai-generator-row { display: flex; gap: 10px; margin-top: 6px; }
+.ai-generator-row input { flex: 1; margin-top: 0; }
+.ai-generator-row button { flex-shrink: 0; }
+#ai-generate-status { margin: 8px 0 0; }
+
+/* Menus de rôles */
+.role-menu-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 6px 4px 10px;
+  font-size: 0.82rem;
+}
+.role-chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.role-chip-remove:hover { color: var(--red); }
+.role-option-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.role-option-form input { width: auto; flex: 1; min-width: 120px; margin-top: 0; }
+
 /* Logs */
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.4s infinite; }
 .log-console {
