@@ -117,6 +117,62 @@ mémoire par bot et diffusés en direct au navigateur via Server-Sent Events.
 Si le serveur redémarre, les bots que tu n'avais pas arrêtés toi-même
 redémarrent automatiquement (colonne `autostart`).
 
+## Déploiement
+
+**Important à savoir :** GitHub seul ne peut pas héberger ce site. GitHub
+Pages ne sert que du HTML/CSS/JS statique — ce projet a besoin d'un process
+Node qui tourne en continu, d'une base SQLite persistante et de connexions
+WebSocket ouvertes vers Discord. Ce que fait ce dépôt via GitHub Actions :
+
+1. **CI** (`.github/workflows/ci.yml`) : à chaque push, installe les
+   dépendances, vérifie la syntaxe et démarre le serveur pour confirmer
+   qu'il répond.
+2. **Publication Docker** (`.github/workflows/docker-publish.yml`) : à
+   chaque push sur `main` (ou déclenchement manuel depuis l'onglet
+   *Actions*), construit une image Docker prête à l'emploi et la publie sur
+   le **GitHub Container Registry** :
+   `ghcr.io/<ton-compte>/<ton-repo>:latest`
+
+Cette image est ensuite déployable en une commande sur n'importe quel
+hébergeur qui exécute des conteneurs Docker.
+
+### Option A — sur ton propre serveur / VPS (Docker)
+
+```bash
+docker run -d \
+  --name djks-bots \
+  -p 3000:3000 \
+  -e SESSION_SECRET=... \
+  -e ENCRYPTION_KEY=... \
+  -e ANTHROPIC_API_KEY=...   # optionnel, pour l'IA \
+  -v djks-data:/app/data \
+  ghcr.io/<ton-compte>/<ton-repo>:latest
+```
+
+Ou avec `docker-compose.yml` (fourni à la racine du projet) :
+
+```bash
+cp .env.example .env   # puis édite les valeurs
+docker compose up -d
+```
+
+Mets `NODE_ENV=production` dans `.env` **seulement** si un reverse proxy
+(Nginx, Caddy, Traefik…) termine le HTTPS devant le conteneur — sinon les
+cookies de session « secure » empêcheront la connexion. Par défaut l'image
+tourne en mode non-sécurisé (HTTP simple), pratique pour tester rapidement.
+
+### Option B — sur une plateforme qui déploie depuis GitHub (le plus simple pour une URL publique)
+
+Des hébergeurs comme **Railway**, **Render** ou **Fly.io** peuvent connecter
+ton dépôt GitHub directement (ils détectent le `Dockerfile` automatiquement)
+ou tirer l'image publiée sur `ghcr.io` ci-dessus. Ils gèrent le HTTPS pour
+toi, donc `NODE_ENV=production` fonctionne directement. Dans tous les cas,
+il te faudra :
+- définir les variables d'environnement `SESSION_SECRET`, `ENCRYPTION_KEY`
+  (et `ANTHROPIC_API_KEY` si tu veux l'IA),
+- attacher un **volume/disque persistant** sur `/app/data` (sinon la base
+  SQLite — donc tes comptes et bots — repart de zéro à chaque redéploiement).
+
 ## Variables d'environnement
 
 Voir `.env.example`. En production, définis absolument `SESSION_SECRET` et
