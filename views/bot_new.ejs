@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Nouveau bot' }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page page-narrow">
+    <div class="page-header">
+      <h1>Ajouter un bot Discord</h1>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <form class="card" method="post" action="/bots">
+      <label>Nom du bot (juste pour toi)
+        <input type="text" name="name" required placeholder="Mon super bot" value="<%= typeof name !== 'undefined' ? name : '' %>" />
+      </label>
+      <label>Token du bot
+        <input type="password" name="token" required placeholder="Colle ici le token depuis le portail développeur Discord" />
+      </label>
+      <label>Préfixe des commandes
+        <input type="text" name="prefix" value="!" maxlength="5" required />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Ajouter le bot</button>
+    </form>
+
+    <div class="card help-card">
+      <h3>Comment récupérer le token de mon bot ?</h3>
+      <ol>
+        <li>Va sur le <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">portail développeur Discord</a> et crée une application (bouton « New Application »).</li>
+        <li>Dans l'onglet <strong>Bot</strong>, clique sur « Reset Token » puis copie le token.</li>
+        <li>Toujours dans l'onglet <strong>Bot</strong>, active <strong>MESSAGE CONTENT INTENT</strong> pour que les commandes préfixées fonctionnent.</li>
+        <li>Dans l'onglet <strong>OAuth2 → URL Generator</strong>, coche <code>bot</code> et <code>applications.commands</code>, puis ouvre le lien généré pour inviter le bot sur ton serveur.</li>
+        <li>Colle le token ici — il est chiffré avant d'être enregistré et n'est jamais réaffiché.</li>
+      </ol>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<header class="topbar">
+  <a class="brand" href="<%= user ? '/dashboard' : '/' %>">
+    <span class="brand-dot"></span> DJKS Bots
+  </a>
+  <nav class="topnav">
+    <% if (user) { %>
+      <a href="/dashboard">Mes bots</a>
+      <span class="topnav-user"><%= user.email %></span>
+      <form action="/logout" method="post" class="inline-form">
+        <button type="submit" class="btn btn-ghost btn-sm">Déconnexion</button>
+      </form>
+    <% } else { %>
+      <a href="/login">Connexion</a>
+      <a href="/register" class="btn btn-primary btn-sm">Créer un compte</a>
+    <% } %>
+  </nav>
+</header>

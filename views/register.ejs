@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Créer un compte' }) %></head>
+<body>
+  <%- include('partials/nav', { user: null }) %>
+  <main class="auth-wrap">
+    <form class="card auth-card" method="post" action="/register">
+      <h1>Créer un compte</h1>
+      <%- include('partials/flash', { flash }) %>
+      <label>Email
+        <input type="email" name="email" required autofocus value="<%= typeof email !== 'undefined' ? email : '' %>" />
+      </label>
+      <label>Mot de passe
+        <input type="password" name="password" minlength="8" required placeholder="8 caractères minimum" />
+      </label>
+      <label>Confirmer le mot de passe
+        <input type="password" name="password2" minlength="8" required />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Créer mon compte</button>
+      <p class="auth-switch">Déjà inscrit ? <a href="/login">Connecte-toi</a></p>
+    </form>
+  </main>
+</body>
+</html>

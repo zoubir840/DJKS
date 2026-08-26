@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Mes bots' }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page">
+    <div class="page-header">
+      <h1>Mes bots</h1>
+      <a href="/bots/new" class="btn btn-primary">+ Nouveau bot</a>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <% if (!bots.length) { %>
+      <div class="empty-state card">
+        <h2>Aucun bot pour le moment</h2>
+        <p>Ajoute ton premier bot Discord en collant son token. Tu peux en créer un depuis le
+          <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">portail développeur Discord</a>.</p>
+        <a href="/bots/new" class="btn btn-primary">Créer mon premier bot</a>
+      </div>
+    <% } else { %>
+      <div class="bot-grid">
+        <% bots.forEach(bot => { %>
+          <a class="card bot-card" href="/bots/<%= bot.id %>">
+            <div class="bot-card-top">
+              <span class="status-dot status-<%= bot.status %>"></span>
+              <h3><%= bot.name %></h3>
+            </div>
+            <p class="bot-card-meta">Préfixe : <code><%= bot.prefix %></code> · <%= bot.command_count %> commande(s)</p>
+            <p class="status-label status-label-<%= bot.status %>"><%= statusLabels[bot.status] || bot.status %></p>
+          </a>
+        <% }) %>
+      </div>
+    <% } %>
+  </main>
+</body>
+</html>

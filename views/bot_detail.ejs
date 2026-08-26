@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: bot.name }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page">
+    <div class="page-header">
+      <div>
+        <a href="/dashboard" class="back-link">&larr; Mes bots</a>
+        <h1><%= bot.name %></h1>
+      </div>
+      <div class="bot-actions">
+        <span class="status-dot status-<%= bot.status %>"></span>
+        <span class="status-label status-label-<%= bot.status %>" id="status-label"><%= statusLabels[bot.status] || bot.status %></span>
+        <form method="post" action="/bots/<%= bot.id %>/start" class="inline-form">
+          <button class="btn btn-success" <%= bot.status === 'online' || bot.status === 'starting' ? 'disabled' : '' %>>▶ Démarrer</button>
+        </form>
+        <form method="post" action="/bots/<%= bot.id %>/stop" class="inline-form">
+          <button class="btn btn-danger" <%= bot.status === 'stopped' ? 'disabled' : '' %>>■ Arrêter</button>
+        </form>
+      </div>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <% if (bot.last_error) { %>
+      <div class="alert alert-error">Dernière erreur : <%= bot.last_error %></div>
+    <% } %>
+
+    <div class="bot-layout">
+      <section class="card">
+        <div class="card-header">
+          <h2>Paramètres</h2>
+        </div>
+        <form method="post" action="/bots/<%= bot.id %>/settings" class="settings-form">
+          <label>Nom
+            <input type="text" name="name" value="<%= bot.name %>" required />
+          </label>
+          <label>Préfixe des commandes
+            <input type="text" name="prefix" value="<%= bot.prefix %>" maxlength="5" required />
+          </label>
+          <p class="hint">Token : <code><%= maskedToken %></code> — <a href="/bots/<%= bot.id %>/token">changer le token</a></p>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <form method="post" action="/bots/<%= bot.id %>/delete" class="inline-form danger-zone"
+              onsubmit="return confirm('Supprimer définitivement ce bot et toutes ses commandes ?');">
+          <button type="submit" class="btn btn-ghost btn-danger-text">Supprimer ce bot</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Commandes (<%= commands.length %>)</h2>
+        </div>
+
+        <form method="post" action="/bots/<%= bot.id %>/commands" class="command-form">
+          <div class="command-form-row">
+            <label>Type
+              <select name="type">
+                <option value="prefix">Préfixe (<%= bot.prefix %>bonjour)</option>
+                <option value="slash">Slash (/bonjour)</option>
+              </select>
+            </label>
+            <label>Déclencheur
+              <input type="text" name="trigger" required placeholder="bonjour" pattern="[a-zA-Z0-9_-]+" />
+            </label>
+          </div>
+          <label>Description (affichée dans <%= bot.prefix %>help et sur Discord pour les commandes slash)
+            <input type="text" name="description" placeholder="Dit bonjour à l'utilisateur" />
+          </label>
+          <label>Réponse
+            <textarea name="response" required placeholder="Bonjour {user} ! Bienvenue sur {server} 👋" rows="2"></textarea>
+          </label>
+          <p class="hint">Variables disponibles : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code></p>
+          <button type="submit" class="btn btn-primary">+ Ajouter la commande</button>
+        </form>
+
+        <% if (!commands.length) { %>
+          <p class="empty-hint">Aucune commande pour l'instant. Ajoute-en une ci-dessus.</p>
+        <% } else { %>
+          <ul class="command-list">
+            <% commands.forEach(cmd => { %>
+              <li class="command-item <%= cmd.enabled ? '' : 'command-disabled' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-<%= cmd.type %>"><%= cmd.type === 'slash' ? '/' : bot.prefix %><%= cmd.trigger %></span>
+                  <span class="command-desc"><%= cmd.description || 'Sans description' %></span>
+                  <p class="command-response"><%= cmd.response %></p>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/toggle" class="inline-form">
+                    <button type="submit" class="btn btn-ghost btn-sm"><%= cmd.enabled ? 'Désactiver' : 'Activer' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer cette commande ?');">
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card logs-card">
+        <div class="card-header">
+          <h2>Logs en direct</h2>
+          <span class="pulse-dot" id="live-indicator" title="Connexion en direct"></span>
+        </div>
+        <div id="log-console" class="log-console" data-bot-id="<%= bot.id %>">
+          <% logs.forEach(l => { %>
+            <div class="log-line log-<%= l.level %>"><span class="log-time"><%= new Date(l.ts).toLocaleTimeString('fr-FR') %></span><%= l.message %></div>
+          <% }) %>
+          <% if (!logs.length) { %>
+            <div class="log-line log-info">Aucun log pour l'instant. Démarre le bot pour voir son activité ici.</div>
+          <% } %>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/bot.js"></script>
+</body>
+</html>
