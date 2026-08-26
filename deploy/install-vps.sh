@@ -4,6 +4,9 @@
 #   bash deploy/install-vps.sh
 #
 # - Installe Node.js 22 si absent (via NodeSource, nécessite sudo)
+# - Installe les outils de compilation si besoin (build-essential, requis
+#   par better-sqlite3 sur les systèmes sans binaire précompilé, fréquent
+#   sur Debian minimal)
 # - Installe les dépendances npm
 # - Crée .env automatiquement (clés générées) s'il n'existe pas déjà
 # - Configure un service systemd qui garde le site en ligne en permanence
@@ -36,20 +39,32 @@ else
   echo "==> Node.js déjà présent : $(node -v)"
 fi
 
-# --- 2. Dépendances ------------------------------------------------------
+# --- 2. Outils de compilation (nécessaires pour better-sqlite3) ----------
+# Debian minimal en particulier n'a souvent ni make ni g++ préinstallés :
+# better-sqlite3 doit alors compiler son module natif et npm install échoue
+# avec "node-gyp ... not found: make" sans ça.
+if ! command -v make >/dev/null 2>&1 || ! command -v g++ >/dev/null 2>&1; then
+  echo "==> Installation des outils de compilation (build-essential, python3)..."
+  sudo apt-get update -qq
+  sudo apt-get install -y build-essential python3
+else
+  echo "==> Outils de compilation déjà présents."
+fi
+
+# --- 3. Dépendances --------------------------------------------------------
 cd "$APP_DIR"
 echo "==> Installation des dépendances npm..."
 npm install --omit=dev
 
-# --- 3. .env (généré automatiquement au premier démarrage si absent) -----
+# --- 4. .env (généré automatiquement au premier démarrage si absent) -----
 if [ ! -f .env ]; then
   node -e "require('./src/ensureEnv').ensureEnv()"
-  echo "    -> Pense à ajouter ANTHROPIC_API_KEY dans .env si tu veux activer l'IA (optionnel)."
+  echo "    -> Pour l'IA (optionnel) : bash deploy/install-ollama.sh (gratuit, sans clé) ou GROQ_API_KEY dans .env (gratuit)."
 else
   echo "==> .env déjà présent, inchangé."
 fi
 
-# --- 4. Service systemd (démarrage auto + redémarrage sur crash) ---------
+# --- 5. Service systemd (démarrage auto + redémarrage sur crash) ---------
 echo "==> Configuration du service systemd ($SERVICE_NAME)..."
 NODE_BIN="$(command -v node)"
 
