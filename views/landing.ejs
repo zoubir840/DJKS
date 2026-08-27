@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Accueil' }) %></head>
+<body>
+  <%- include('partials/nav', { user: null }) %>
+
+  <main class="hero">
+    <div class="hero-content">
+      <h1>Crée et gère tes bots Discord <span class="accent">sans écrire de code</span></h1>
+      <p class="hero-sub">
+        Colle le token de ton bot, ajoute des commandes en quelques clics, démarre-le et suis ses logs
+        en direct — tout depuis ce site.
+      </p>
+      <div class="hero-cta">
+        <a href="/register" class="btn btn-primary btn-lg">Créer mon compte gratuitement</a>
+        <a href="/login" class="btn btn-ghost btn-lg">J'ai déjà un compte</a>
+      </div>
+    </div>
+
+    <div class="hero-cards">
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Démarrage en un clic</h3>
+        <p>Connecte ton bot à Discord et mets-le en ligne ou hors ligne directement depuis le tableau de bord.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧩</div>
+        <h3>Commandes sans code</h3>
+        <p>Crée des commandes préfixées (<code>!salut</code>) ou des commandes slash (<code>/salut</code>) avec des réponses personnalisées.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📜</div>
+        <h3>Logs en direct</h3>
+        <p>Suis en temps réel la connexion, les erreurs et les commandes déclenchées par tes membres.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Tokens chiffrés</h3>
+        <p>Les tokens de tes bots sont chiffrés en base (AES-256-GCM) et jamais ré-affichés en clair.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>Besoin d'un bot Discord ? <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Crée une application sur le portail développeur Discord</a>, récupère son token, et ajoute-le ici.</p>
+  </footer>
+</body>
+</html>

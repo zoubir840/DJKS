@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Connexion' }) %></head>
+<body>
+  <%- include('partials/nav', { user: null }) %>
+  <main class="auth-wrap">
+    <form class="card auth-card" method="post" action="/login">
+      <%- include('partials/csrf') %>
+      <h1>Connexion</h1>
+      <%- include('partials/flash', { flash }) %>
+      <label>Email
+        <input type="email" name="email" required autofocus value="<%= typeof email !== 'undefined' ? email : '' %>" />
+      </label>
+      <label>Mot de passe
+        <input type="password" name="password" required />
+      </label>
+      <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+      <p class="auth-switch">Pas encore de compte ? <a href="/register">Inscris-toi</a></p>
+    </form>
+  </main>
+</body>
+</html>

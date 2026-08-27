@@ -1,0 +1,15 @@
+services:
+  djks-bots:
+    build: .
+    # Ou, pour utiliser directement l'image publiée par la CI GitHub :
+    # image: ghcr.io/<ton-compte>/<ton-repo>:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - djks-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  djks-data:

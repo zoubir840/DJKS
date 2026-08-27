@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Modifier la commande' }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page page-narrow">
+    <div class="page-header">
+      <a href="/bots/<%= bot.id %>" class="back-link">&larr; <%= bot.name %></a>
+      <h1>Modifier la commande</h1>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/edit" class="card command-form" id="command-form">
+      <%- include('partials/csrf') %>
+      <div class="command-form-row">
+        <label>Type
+          <select name="type" id="command-type-select">
+            <option value="prefix" <%= cmd.type === 'prefix' ? 'selected' : '' %>>Préfixe (<%= bot.prefix %>bonjour)</option>
+            <option value="slash" <%= cmd.type === 'slash' ? 'selected' : '' %>>Slash (/bonjour)</option>
+          </select>
+        </label>
+        <label>Déclencheur
+          <input type="text" name="trigger" id="command-trigger-input" required value="<%= cmd.trigger %>" pattern="[a-zA-Z0-9_-]+" />
+        </label>
+        <label>Cooldown (secondes)
+          <input type="number" name="cooldown_seconds" id="command-cooldown-input" min="0" max="3600" value="<%= cmd.cooldown_seconds %>" />
+        </label>
+      </div>
+      <label>Description
+        <input type="text" name="description" id="command-description-input" value="<%= cmd.description %>" />
+      </label>
+      <label>Rôle requis (optionnel — laisser vide = tout le monde)
+        <input type="text" name="allowed_role_id" value="<%= cmd.allowed_role_id || '' %>" placeholder="ID du rôle Discord" />
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" name="match_anywhere" <%= cmd.match_anywhere ? 'checked' : '' %> /> Répondre si ce mot apparaît n'importe où dans un message (commandes « préfixe » uniquement)
+      </label>
+      <label>Format de réponse
+        <select name="response_type" id="response-type-select">
+          <option value="text" <%= cmd.response_type === 'text' ? 'selected' : '' %>>Texte simple</option>
+          <option value="embed" <%= cmd.response_type === 'embed' ? 'selected' : '' %>>Embed (encadré coloré)</option>
+        </select>
+      </label>
+      <div id="embed-fields" class="command-form-row" style="display:none;">
+        <label>Titre de l'embed
+          <input type="text" name="embed_title" id="command-embed-title-input" value="<%= cmd.embed_title %>" />
+        </label>
+        <label>Couleur
+          <input type="color" name="embed_color" id="command-embed-color-input" value="<%= cmd.embed_color %>" />
+        </label>
+      </div>
+      <label>Réponse
+        <textarea name="response" id="command-response-input" required rows="3"><%= cmd.response %></textarea>
+      </label>
+      <p class="hint">Variables : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code> — sépare plusieurs réponses par <code>|||</code> pour qu'une soit tirée au hasard.</p>
+      <div id="response-preview" class="response-preview"></div>
+      <button type="submit" class="btn btn-primary btn-block">Enregistrer les modifications</button>
+    </form>
+  </main>
+  <script src="/js/bot.js"></script>
+</body>
+</html>

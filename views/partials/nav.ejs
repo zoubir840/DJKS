@@ -1,0 +1,21 @@
+<header class="topbar">
+  <a class="brand" href="<%= user ? '/dashboard' : '/' %>">
+    <span class="brand-dot"></span> DJKS Bots
+  </a>
+  <nav class="topnav">
+    <% if (user) { %>
+      <a href="/dashboard">Mes bots</a>
+      <a href="/account">Mon compte</a>
+      <span class="topnav-user"><%= user.email %></span>
+      <form action="/logout" method="post" class="inline-form">
+        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+        <button type="submit" class="btn btn-ghost btn-sm">Déconnexion</button>
+      </form>
+    <% } else { %>
+      <a href="/login">Connexion</a>
+      <a href="/register" class="btn btn-primary btn-sm">Créer un compte</a>
+    <% } %>
+    <button type="button" id="theme-toggle" class="icon-btn" title="Changer de thème" aria-label="Changer de thème">🌙</button>
+    <a href="/admin" class="icon-btn" title="Administration" aria-label="Administration">🛠️</a>
+  </nav>
+</header>

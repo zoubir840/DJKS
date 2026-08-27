@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Mon compte' }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page page-narrow">
+    <div class="page-header"><h1>Mon compte</h1></div>
+    <%- include('partials/flash', { flash }) %>
+
+    <section class="card">
+      <div class="card-header"><h2>Informations</h2></div>
+      <p class="hint" style="margin-top:0;">Email : <strong><%= user.email %></strong></p>
+      <p class="hint">Membre depuis le <%= new Date(user.created_at).toLocaleDateString('fr-FR') %></p>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><h2>Changer le mot de passe</h2></div>
+      <form method="post" action="/account/password">
+        <%- include('partials/csrf', { csrfToken }) %>
+        <label>Mot de passe actuel
+          <input type="password" name="currentPassword" required />
+        </label>
+        <label>Nouveau mot de passe
+          <input type="password" name="newPassword" minlength="8" required placeholder="8 caractères minimum" />
+        </label>
+        <label>Confirmer le nouveau mot de passe
+          <input type="password" name="newPassword2" minlength="8" required />
+        </label>
+        <button type="submit" class="btn btn-primary">Mettre à jour</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><h2>Zone dangereuse</h2></div>
+      <p class="hint" style="margin-top:0;">Supprime définitivement ton compte, tous tes bots et leurs commandes. Les bots en cours seront arrêtés immédiatement.</p>
+      <form method="post" action="/account/delete" onsubmit="return confirm('Supprimer définitivement ton compte et tous tes bots ? Cette action est irréversible.');">
+        <%- include('partials/csrf', { csrfToken }) %>
+        <label>Confirme avec ton mot de passe
+          <input type="password" name="password" required />
+        </label>
+        <button type="submit" class="btn btn-danger">Supprimer mon compte</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

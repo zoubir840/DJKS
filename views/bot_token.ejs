@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Changer le token' }) %></head>
+<body>
+  <%- include('partials/nav', { user }) %>
+  <main class="page page-narrow">
+    <div class="page-header">
+      <a href="/bots/<%= bot.id %>" class="back-link">&larr; <%= bot.name %></a>
+      <h1>Changer le token</h1>
+    </div>
+    <%- include('partials/flash', { flash }) %>
+    <form class="card" method="post" action="/bots/<%= bot.id %>/token">
+      <%- include('partials/csrf') %>
+      <label>Nouveau token du bot
+        <input type="password" name="token" required placeholder="Colle le nouveau token" />
+      </label>
+      <p class="hint">Le bot doit être redémarré après ce changement pour utiliser le nouveau token.</p>
+      <button type="submit" class="btn btn-primary btn-block">Mettre à jour le token</button>
+    </form>
+  </main>
+</body>
+</html>

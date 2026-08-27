@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier la syntaxe des fichiers serveur
+        run: |
+          node -c server.js
+          for f in src/*.js; do node -c "$f"; done
+          node -c public/js/bot.js
+
+      - name: Démarrer le serveur et vérifier qu'il répond
+        run: |
+          cp .env.example .env
+          sed -i "s/change-moi-64-caracteres-hexadecimaux-generes-avec-crypto-random/$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")/" .env
+          sed -i "s/change-moi-en-une-longue-chaine-aleatoire/$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")/" .env
+          node server.js &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3000/ -o /dev/null; then
+              echo "Le serveur répond."
+              kill $SERVER_PID
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "Le serveur ne répond pas après 10s."
+          kill $SERVER_PID || true
+          exit 1

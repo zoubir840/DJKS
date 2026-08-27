@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: 'Erreur ' + code }) %></head>
+<body>
+  <%- include('partials/nav', { user: typeof user !== 'undefined' ? user : null }) %>
+  <main class="page page-narrow">
+    <div class="card empty-state">
+      <h1 style="font-size:2.2rem;margin-bottom:4px;"><%= code %></h1>
+      <h2><%= title %></h2>
+      <p><%= message %></p>
+      <a href="/" class="btn btn-primary">Retour à l'accueil</a>
+    </div>
+  </main>
+</body>
+</html>

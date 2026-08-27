@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="fr">
+<head><%- include('partials/head', { title: bot.name }) %></head>
+<body data-csrf="<%= csrfToken %>">
+  <%- include('partials/nav', { user }) %>
+  <main class="page">
+    <div class="page-header">
+      <div class="bot-title">
+        <a href="/dashboard" class="back-link">&larr; Mes bots</a>
+        <div class="bot-title-row">
+          <img class="bot-avatar" src="<%= bot.avatar_url || 'https://cdn.discordapp.com/embed/avatars/0.png' %>" alt="" />
+          <div>
+            <h1><%= bot.name %></h1>
+            <% if (bot.username) { %><p class="bot-username">@<%= bot.username %></p><% } %>
+          </div>
+        </div>
+      </div>
+      <div class="bot-actions">
+        <span class="status-dot status-<%= bot.status %>"></span>
+        <span class="status-label status-label-<%= bot.status %>" id="status-label"><%= statusLabels[bot.status] || bot.status %></span>
+        <form method="post" action="/bots/<%= bot.id %>/start" class="inline-form">
+          <%- include('partials/csrf') %>
+          <button class="btn btn-success" <%= bot.status === 'online' || bot.status === 'starting' ? 'disabled' : '' %>>▶ Démarrer</button>
+        </form>
+        <form method="post" action="/bots/<%= bot.id %>/stop" class="inline-form">
+          <%- include('partials/csrf') %>
+          <button class="btn btn-danger" <%= bot.status === 'stopped' ? 'disabled' : '' %>>■ Arrêter</button>
+        </form>
+      </div>
+    </div>
+
+    <%- include('partials/flash', { flash }) %>
+
+    <% if (bot.last_error) { %>
+      <div class="alert alert-error">Dernière erreur : <%= bot.last_error %></div>
+    <% } %>
+
+    <div class="stat-row">
+      <div class="stat-tile"><span class="stat-value"><%= commands.length %></span><span class="stat-label">Commande(s)</span></div>
+      <div class="stat-tile"><span class="stat-value"><%= bot.total_commands_run %></span><span class="stat-label">Exécutions totales</span></div>
+      <div class="stat-tile"><span class="stat-value" id="guild-count"><%= guilds.length %></span><span class="stat-label">Serveur(s)</span></div>
+      <div class="stat-tile">
+        <span class="stat-value"><%= bot.status === 'online' && bot.started_at ? new Date(bot.started_at).toLocaleTimeString('fr-FR') : '—' %></span>
+        <span class="stat-label">En ligne depuis</span>
+      </div>
+    </div>
+
+    <div class="bot-layout">
+      <section class="card">
+        <div class="card-header"><h2>Paramètres</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/settings" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label>Nom
+            <input type="text" name="name" value="<%= bot.name %>" required />
+          </label>
+          <label>Préfixe des commandes
+            <input type="text" name="prefix" value="<%= bot.prefix %>" maxlength="5" required />
+          </label>
+          <p class="hint">Token : <code><%= maskedToken %></code> — <a href="/bots/<%= bot.id %>/token">changer le token</a></p>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <% if (bot.client_id) { %>
+          <a class="btn btn-primary btn-block" style="margin-top:14px;" target="_blank" rel="noopener" href="<%= inviteUrl %>">+ Inviter sur un serveur</a>
+        <% } else { %>
+          <p class="hint">Démarre le bot une première fois pour obtenir son lien d'invitation.</p>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/delete" class="inline-form danger-zone"
+              onsubmit="return confirm('Supprimer définitivement ce bot et toutes ses commandes ?');">
+          <%- include('partials/csrf') %>
+          <button type="submit" class="btn btn-ghost btn-danger-text">Supprimer ce bot</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Serveurs (<span id="guild-count-2"><%= guilds.length %></span>)</h2></div>
+        <ul class="guild-list" id="guild-list">
+          <% guilds.forEach(g => { %>
+            <li class="guild-item">
+              <img src="<%= g.iconUrl || 'https://cdn.discordapp.com/embed/avatars/0.png' %>" alt="" />
+              <span class="guild-name"><%= g.name %></span>
+              <span class="guild-members"><%= g.memberCount %> membre(s)</span>
+            </li>
+          <% }) %>
+        </ul>
+        <% if (!guilds.length) { %>
+          <p class="empty-hint" id="guild-empty">
+            <%= bot.status === 'online' ? "Ce bot n'a été ajouté à aucun serveur pour l'instant." : "Démarre le bot pour voir la liste de ses serveurs." %>
+          </p>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>Modération intégrée</h2>
+          <form method="post" action="/bots/<%= bot.id %>/moderation" class="inline-form">
+            <%- include('partials/csrf') %>
+            <input type="hidden" name="enabled" value="<%= bot.moderation_enabled ? '0' : '1' %>" />
+            <button type="submit" class="btn btn-sm <%= bot.moderation_enabled ? 'btn-danger' : 'btn-success' %>">
+              <%= bot.moderation_enabled ? 'Désactiver' : 'Activer' %>
+            </button>
+          </form>
+        </div>
+        <p class="hint" style="margin-top:0;">
+          Ajoute automatiquement <code><%= bot.prefix %>kick</code>, <code><%= bot.prefix %>ban</code>,
+          <code><%= bot.prefix %>clear</code>, <code><%= bot.prefix %>warn</code>, <code><%= bot.prefix %>warnings</code>,
+          <code><%= bot.prefix %>clearwarnings</code>, <code><%= bot.prefix %>mute</code> et <code><%= bot.prefix %>unmute</code>.
+          Chaque commande vérifie les permissions Discord de la personne qui l'utilise ainsi que celles du bot avant d'agir.
+        </p>
+        <% if (bot.moderation_enabled) { %>
+          <form method="post" action="/bots/<%= bot.id %>/warn-settings" class="settings-form" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+            <%- include('partials/csrf') %>
+            <p class="hint" style="margin-top:0;">Sanction automatique après un certain nombre d'avertissements (<%= warningCount %> au total sur ce bot) :</p>
+            <div class="command-form-row">
+              <label>Seuil d'avertissements
+                <input type="number" name="warn_action_threshold" min="1" max="100" value="<%= bot.warn_action_threshold %>" />
+              </label>
+              <label>Sanction automatique
+                <select name="warn_action">
+                  <option value="none" <%= bot.warn_action === 'none' ? 'selected' : '' %>>Aucune (juste suivi)</option>
+                  <option value="kick" <%= bot.warn_action === 'kick' ? 'selected' : '' %>>Expulser</option>
+                  <option value="ban" <%= bot.warn_action === 'ban' ? 'selected' : '' %>>Bannir</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Enregistrer</button>
+          </form>
+          <% if (recentWarnings.length) { %>
+            <ul class="role-menu-options" style="margin-top:12px;">
+              <% recentWarnings.forEach(w => { %>
+                <li class="role-chip" title="<%= w.reason %>"><%= w.username %> — <%= w.reason %></li>
+              <% }) %>
+            </ul>
+          <% } %>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Rôle automatique</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/autorole" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.autorole_enabled ? 'checked' : '' %> /> Attribuer automatiquement un rôle aux nouveaux membres
+          </label>
+          <label>ID du rôle
+            <input type="text" name="role_id" value="<%= bot.autorole_role_id || '' %>" placeholder="Paramètres du serveur → Rôles → Copier l'ID" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>🛡️ Auto-modération</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/automod" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="antispam_enabled" <%= bot.antispam_enabled ? 'checked' : '' %> /> Supprimer les messages contenant un mot interdit
+          </label>
+          <label>Mots interdits (séparés par des virgules)
+            <input type="text" name="banned_words" value="<%= bot.banned_words %>" placeholder="mot1, mot2, expression interdite" />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="automod_invites" <%= bot.automod_invites ? 'checked' : '' %> /> Supprimer les liens d'invitation Discord
+          </label>
+          <div class="command-form-row">
+            <label>Max mentions par message (0 = désactivé)
+              <input type="number" name="automod_mentions_max" min="0" max="100" value="<%= bot.automod_mentions_max %>" />
+            </label>
+            <label>Seuil de majuscules (%)
+              <input type="number" name="automod_caps_threshold" min="10" max="100" value="<%= bot.automod_caps_threshold %>" />
+            </label>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" name="automod_caps_enabled" <%= bot.automod_caps_enabled ? 'checked' : '' %> /> Supprimer les messages avec trop de MAJUSCULES
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Salon de logs de modération</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/modlog" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label>ID du salon (kick/ban/clear/anti-spam y sont journalisés)
+            <input type="text" name="channel_id" value="<%= bot.modlog_channel_id || '' %>" placeholder="Laisse vide pour désactiver" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>🤖 Assistant IA</h2>
+          <% if (bot.ai_enabled) { %><span class="hint" style="margin:0;"><%= aiUsageToday %>/<%= bot.ai_daily_limit %> aujourd'hui</span><% } %>
+        </div>
+        <% if (!aiConfigured) { %>
+          <p class="alert alert-error" style="margin-top:0;">
+            L'IA n'est pas configurée sur ce serveur. Deux options gratuites : <code>bash deploy/install-ollama.sh</code>
+            (100% gratuit, sans aucune clé, tourne en local) ou une clé <code>GROQ_API_KEY</code> gratuite sur
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> dans le <code>.env</code> de l'hébergeur.
+          </p>
+        <% } else { %>
+          <p class="hint" style="margin-top:0;">Propulsé par <strong><%= aiProviderLabel %></strong>.</p>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/ai" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.ai_enabled ? 'checked' : '' %> <%= aiConfigured ? '' : 'disabled' %> />
+            Activer l'assistant IA (répond quand on le mentionne ou via <code><%= bot.prefix %><%= bot.ai_trigger %></code>)
+          </label>
+          <label>Personnalité / instructions (sur mesure pour ce serveur)
+            <textarea name="persona" rows="3"><%= bot.ai_persona %></textarea>
+          </label>
+          <div class="command-form-row">
+            <label>Mot déclencheur (<%= bot.prefix %>...)
+              <input type="text" name="trigger" value="<%= bot.ai_trigger %>" maxlength="20" />
+            </label>
+            <label>Limite de messages / jour
+              <input type="number" name="daily_limit" value="<%= bot.ai_daily_limit %>" min="1" max="5000" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary" <%= aiConfigured ? '' : 'disabled' %>>Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Message de bienvenue</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/welcome" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.welcome_enabled ? 'checked' : '' %> /> Envoyer un message quand un membre rejoint le serveur
+          </label>
+          <label>ID du salon
+            <input type="text" name="channel_id" value="<%= bot.welcome_channel_id || '' %>" placeholder="Clic droit sur le salon → Copier l'ID" />
+          </label>
+          <label>Message
+            <textarea name="message" rows="2"><%= bot.welcome_message %></textarea>
+          </label>
+          <p class="hint">Variables : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code></p>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Message de départ</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/leave" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.leave_enabled ? 'checked' : '' %> /> Envoyer un message quand un membre quitte le serveur
+          </label>
+          <label>ID du salon
+            <input type="text" name="channel_id" value="<%= bot.leave_channel_id || '' %>" placeholder="Clic droit sur le salon → Copier l'ID" />
+          </label>
+          <label>Message
+            <textarea name="message" rows="2"><%= bot.leave_message %></textarea>
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>Menus de rôles (boutons Discord)</h2></div>
+        <p class="hint" style="margin-top:0;">Publie un message avec des boutons : chaque membre clique pour obtenir ou retirer un rôle, sans réaction ni commande.</p>
+
+        <form method="post" action="/bots/<%= bot.id %>/role-menus" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>ID du salon
+              <input type="text" name="channel_id" required placeholder="Clic droit sur le salon → Copier l'ID" />
+            </label>
+            <label>Titre
+              <input type="text" name="title" placeholder="Choisis tes rôles" />
+            </label>
+          </div>
+          <label>Description
+            <input type="text" name="description" placeholder="Clique sur un bouton pour obtenir un rôle." />
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer un menu de rôles</button>
+        </form>
+
+        <% if (roleMenus.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% roleMenus.forEach(menu => { %>
+              <li class="command-item">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= menu.title %></span>
+                  <% if (menu.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <p class="command-response">Salon <code>#<%= menu.channel_id %></code> — <%= menu.description %></p>
+                  <div class="role-menu-options">
+                    <% menu.options.forEach(opt => { %>
+                      <span class="role-chip">
+                        <%= opt.emoji %> <%= opt.label %>
+                        <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/options/<%= opt.id %>/delete" class="inline-form">
+                          <%- include('partials/csrf') %>
+                          <button type="submit" class="role-chip-remove" title="Retirer">✕</button>
+                        </form>
+                      </span>
+                    <% }) %>
+                    <% if (!menu.options.length) { %><span class="hint">Aucun rôle pour l'instant.</span><% } %>
+                  </div>
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/options" class="role-option-form">
+                    <%- include('partials/csrf') %>
+                    <input type="text" name="label" placeholder="Nom affiché" required maxlength="80" />
+                    <input type="text" name="emoji" placeholder="Emoji (optionnel)" maxlength="8" />
+                    <input type="text" name="role_id" placeholder="ID du rôle" required />
+                    <button type="submit" class="btn btn-ghost btn-sm">+ Ajouter</button>
+                  </form>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/publish" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-primary btn-sm"><%= menu.message_id ? 'Republier' : 'Publier' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/role-menus/<%= menu.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce menu du site ? Le message Discord existant restera affiché.');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>🏆 Système de niveaux (XP)</h2>
+          <% if (bot.leveling_enabled) { %><span class="hint" style="margin:0;"><%= levelCount %> membre(s) classé(s)</span><% } %>
+        </div>
+        <form method="post" action="/bots/<%= bot.id %>/leveling" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.leveling_enabled ? 'checked' : '' %> />
+            Activer l'XP par message + <code><%= bot.prefix %>rank</code> et <code><%= bot.prefix %>leaderboard</code>
+          </label>
+          <div class="command-form-row">
+            <label>XP par message (± aléatoire)
+              <input type="number" name="xp_per_message" min="1" max="1000" value="<%= bot.leveling_xp_per_message %>" />
+            </label>
+            <label>Cooldown entre deux gains (s)
+              <input type="number" name="cooldown_seconds" min="5" max="3600" value="<%= bot.leveling_cooldown_seconds %>" />
+            </label>
+          </div>
+          <label>Salon d'annonce de passage de niveau (optionnel — sinon, dans le salon du message)
+            <input type="text" name="announce_channel_id" value="<%= bot.leveling_announce_channel_id || '' %>" placeholder="ID du salon" />
+          </label>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <% if (topLevels.length) { %>
+          <ul class="role-menu-options" style="margin-top:12px;">
+            <% topLevels.forEach((row, i) => { %>
+              <li class="role-chip"><%= ['🥇','🥈','🥉'][i] || (i+1) + '.' %> <%= row.username %> — niveau <%= row.level %></li>
+            <% }) %>
+          </ul>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/leveling/reset" class="inline-form" style="margin-top:12px;"
+              onsubmit="return confirm('Réinitialiser tout le classement de ce bot ?');">
+          <%- include('partials/csrf') %>
+          <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Réinitialiser le classement</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>⭐ Starboard</h2></div>
+        <p class="hint" style="margin-top:0;">Republie automatiquement un message dans un salon dédié quand il reçoit assez de réactions.</p>
+        <form method="post" action="/bots/<%= bot.id %>/starboard" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.starboard_enabled ? 'checked' : '' %> /> Activer le starboard
+          </label>
+          <div class="command-form-row">
+            <label>Salon starboard
+              <input type="text" name="channel_id" value="<%= bot.starboard_channel_id || '' %>" placeholder="ID du salon" />
+            </label>
+            <label>Emoji
+              <input type="text" name="emoji" value="<%= bot.starboard_emoji %>" maxlength="8" />
+            </label>
+            <label>Seuil (nombre de réactions)
+              <input type="number" name="threshold" min="1" max="1000" value="<%= bot.starboard_threshold %>" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>🔌 Webhooks entrants</h2></div>
+        <p class="hint" style="margin-top:0;">Connecte un autre service (GitHub, IFTTT, un script...) : un appel HTTP sur ce lien poste un message sur Discord.</p>
+        <form method="post" action="/bots/<%= bot.id %>/webhook" class="settings-form">
+          <%- include('partials/csrf') %>
+          <label class="checkbox-label">
+            <input type="checkbox" name="enabled" <%= bot.webhook_enabled ? 'checked' : '' %> /> Activer ce webhook
+          </label>
+          <label>Salon de destination
+            <input type="text" name="channel_id" value="<%= bot.webhook_channel_id || '' %>" placeholder="ID du salon" />
+          </label>
+          <label>Modèle de message
+            <input type="text" name="template" value="<%= bot.webhook_template %>" />
+          </label>
+          <p class="hint">Variables tirées du JSON envoyé : <code>{message}</code> <code>{title}</code> <code>{url}</code> <code>{json}</code> (tout le payload)</p>
+          <button type="submit" class="btn btn-secondary">Enregistrer</button>
+        </form>
+        <% if (webhookUrl) { %>
+          <p class="hint">URL : <code><%= webhookUrl %></code></p>
+        <% } %>
+        <form method="post" action="/bots/<%= bot.id %>/webhook/generate" class="inline-form"
+              onsubmit="return confirm('Regenerer ce lien ? Un lien deja utilise ailleurs cessera de fonctionner.');">
+          <%- include('partials/csrf') %>
+          <button type="submit" class="btn btn-ghost btn-sm"><%= webhookUrl ? 'Regénérer le lien' : 'Générer un lien' %></button>
+        </form>
+        <p class="hint">Test rapide : <code>curl -X POST <%= webhookUrl || '(génère un lien ci-dessus)' %> -H "Content-Type: application/json" -d '{"message":"Coucou !"}'</code></p>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>📊 Sondages</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/polls" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Question
+              <input type="text" name="question" required placeholder="Quel jeu ce soir ?" />
+            </label>
+          </div>
+          <label>Options (une par ligne, 2 à 10)
+            <textarea name="options" rows="3" placeholder="Valorant&#10;Minecraft&#10;Among Us"></textarea>
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer le sondage</button>
+        </form>
+
+        <% if (polls.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% polls.forEach(poll => { %>
+              <li class="command-item">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= poll.question %></span>
+                  <% if (poll.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <p class="command-response">Salon <code>#<%= poll.channel_id %></code> — <%= poll.options.map(o => o.label).join(' · ') %></p>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/polls/<%= poll.id %>/publish" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-primary btn-sm"><%= poll.message_id ? 'Republier' : 'Publier' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/polls/<%= poll.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce sondage ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>📅 Annonces programmées</h2></div>
+        <p class="hint" style="margin-top:0;">Envoie un message automatiquement, à intervalle régulier (le bot doit être en ligne au moment de l'envoi).</p>
+        <form method="post" action="/bots/<%= bot.id %>/announcements" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Toutes les (minutes)
+              <input type="number" name="interval_minutes" min="5" max="10080" value="1440" />
+            </label>
+          </div>
+          <label>Message
+            <textarea name="message" rows="2" required placeholder="N'oubliez pas notre event du vendredi !"></textarea>
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer l'annonce</button>
+        </form>
+        <% if (announcements.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% announcements.forEach(a => { %>
+              <li class="command-item <%= a.enabled ? '' : 'command-disabled' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix">toutes les <%= a.interval_minutes %> min</span>
+                  <p class="command-response">Salon <code>#<%= a.channel_id %></code> — <%= a.message %></p>
+                  <p class="command-uses"><% if (a.enabled) { %>Prochain envoi : <%= new Date(a.next_run_at).toLocaleString('fr-FR') %><% } else { %>En pause<% } %></p>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/announcements/<%= a.id %>/toggle" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-sm"><%= a.enabled ? 'Mettre en pause' : 'Reprendre' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/announcements/<%= a.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer cette annonce programmée ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>🎁 Giveaways</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/giveaways" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Lot à gagner
+              <input type="text" name="prize" required placeholder="Un abonnement Nitro" />
+            </label>
+          </div>
+          <div class="command-form-row">
+            <label>Nombre de gagnants
+              <input type="number" name="winner_count" min="1" max="20" value="1" />
+            </label>
+            <label>Durée (minutes)
+              <input type="number" name="duration_minutes" min="1" max="43200" value="60" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary">+ Créer le giveaway</button>
+        </form>
+        <% if (giveaways.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% giveaways.forEach(g => { %>
+              <li class="command-item <%= g.ended ? 'command-disabled' : '' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= g.prize %></span>
+                  <% if (g.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <% if (g.ended) { %><span class="command-badge command-badge-cooldown">terminé</span><% } %>
+                  <p class="command-response">Salon <code>#<%= g.channel_id %></code> — <%= g.winner_count %> gagnant(s)</p>
+                  <p class="command-uses"><% if (!g.ended) { %>Se termine le <%= new Date(g.ends_at).toLocaleString('fr-FR') %><% } %></p>
+                </div>
+                <div class="command-item-actions">
+                  <% if (!g.ended) { %>
+                    <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/publish" class="inline-form">
+                      <%- include('partials/csrf') %>
+                      <button type="submit" class="btn btn-primary btn-sm" <%= g.message_id ? 'disabled' : '' %>>Publier</button>
+                    </form>
+                    <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/end" class="inline-form"
+                          onsubmit="return confirm('Terminer ce giveaway maintenant et tirer un gagnant ?');">
+                      <%- include('partials/csrf') %>
+                      <button type="submit" class="btn btn-ghost btn-sm">Terminer maintenant</button>
+                    </form>
+                  <% } %>
+                  <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce giveaway ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card command-card">
+        <div class="card-header">
+          <h2>Commandes (<%= commands.length %>)</h2>
+        </div>
+
+        <div class="ai-generator">
+          <label>✨ Générer une commande avec l'IA (décris ce que tu veux)
+            <div class="ai-generator-row">
+              <input type="text" id="ai-generate-input" placeholder="Ex : une commande /avatar qui affiche l'avatar de l'utilisateur" <%= aiConfigured ? '' : 'disabled' %> />
+              <button type="button" id="ai-generate-btn" class="btn btn-primary" <%= aiConfigured ? '' : 'disabled' %>>Générer</button>
+            </div>
+          </label>
+          <p class="hint" id="ai-generate-status">
+            <% if (!aiConfigured) { %>Lance <code>deploy/install-ollama.sh</code> (gratuit, sans clé) ou configure <code>GROQ_API_KEY</code> côté serveur pour activer ce générateur.<% } %>
+          </p>
+        </div>
+
+        <form method="post" action="/bots/<%= bot.id %>/commands" class="command-form" id="command-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Type
+              <select name="type" id="command-type-select">
+                <option value="prefix">Préfixe (<%= bot.prefix %>bonjour)</option>
+                <option value="slash">Slash (/bonjour)</option>
+              </select>
+            </label>
+            <label>Déclencheur
+              <input type="text" name="trigger" id="command-trigger-input" required placeholder="bonjour" pattern="[a-zA-Z0-9_-]+" />
+            </label>
+            <label>Cooldown (secondes)
+              <input type="number" name="cooldown_seconds" id="command-cooldown-input" min="0" max="3600" value="0" />
+            </label>
+          </div>
+          <label>Description (affichée dans <%= bot.prefix %>help et sur Discord pour les commandes slash)
+            <input type="text" name="description" id="command-description-input" placeholder="Dit bonjour à l'utilisateur" />
+          </label>
+          <label>Rôle requis (optionnel — laisser vide = tout le monde)
+            <input type="text" name="allowed_role_id" placeholder="ID du rôle Discord" />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="match_anywhere" /> Répondre si ce mot apparaît n'importe où dans un message (commandes « préfixe » uniquement, pas besoin du préfixe)
+          </label>
+          <label>Format de réponse
+            <select name="response_type" id="response-type-select">
+              <option value="text">Texte simple</option>
+              <option value="embed">Embed (encadré coloré)</option>
+            </select>
+          </label>
+          <div id="embed-fields" class="command-form-row" style="display:none;">
+            <label>Titre de l'embed
+              <input type="text" name="embed_title" id="command-embed-title-input" placeholder="Titre (optionnel)" />
+            </label>
+            <label>Couleur
+              <input type="color" name="embed_color" id="command-embed-color-input" value="#5865F2" />
+            </label>
+          </div>
+          <label>Réponse
+            <textarea name="response" id="command-response-input" required placeholder="Bonjour {user} ! Bienvenue sur {server} 👋" rows="2"></textarea>
+          </label>
+          <p class="hint">Variables : <code>{user}</code> <code>{username}</code> <code>{server}</code> <code>{membercount}</code> — sépare plusieurs réponses par <code>|||</code> pour qu'une soit tirée au hasard.</p>
+          <div id="response-preview" class="response-preview"></div>
+          <button type="submit" class="btn btn-primary">+ Ajouter la commande</button>
+        </form>
+
+        <details class="import-export">
+          <summary>Sauvegarder / partager mes commandes (export, import)</summary>
+          <div class="import-export-body">
+            <a href="/bots/<%= bot.id %>/commands/export" class="btn btn-secondary btn-sm">⬇ Exporter en JSON</a>
+            <form method="post" action="/bots/<%= bot.id %>/commands/import" class="settings-form" style="margin-top:12px;">
+              <%- include('partials/csrf') %>
+              <label>Coller un JSON exporté depuis ce site (les commandes importées sont désactivées par défaut)
+                <textarea name="json" rows="3" placeholder='[{"trigger": "bonjour", "type": "prefix", ...}]'></textarea>
+              </label>
+              <button type="submit" class="btn btn-secondary btn-sm">⬆ Importer</button>
+            </form>
+          </div>
+        </details>
+
+        <% if (!commands.length) { %>
+          <p class="empty-hint">Aucune commande pour l'instant. Ajoute-en une ci-dessus.</p>
+        <% } else { %>
+          <ul class="command-list">
+            <% commands.forEach(cmd => { %>
+              <li class="command-item <%= cmd.enabled ? '' : 'command-disabled' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-<%= cmd.type %>"><%= cmd.type === 'slash' ? '/' : bot.prefix %><%= cmd.trigger %></span>
+                  <% if (cmd.response_type === 'embed') { %><span class="command-badge command-badge-embed">embed</span><% } %>
+                  <% if (cmd.cooldown_seconds > 0) { %><span class="command-badge command-badge-cooldown">⏳ <%= cmd.cooldown_seconds %>s</span><% } %>
+                  <% if (cmd.allowed_role_id) { %><span class="command-badge command-badge-cooldown">🔒 rôle requis</span><% } %>
+                  <% if (cmd.match_anywhere) { %><span class="command-badge command-badge-cooldown">🔎 mot-clé</span><% } %>
+                  <span class="command-desc"><%= cmd.description || 'Sans description' %></span>
+                  <p class="command-response"><%= cmd.response %></p>
+                  <p class="command-uses"><%= cmd.uses_count %> utilisation(s)<% if (cmd.last_used_at) { %> · dernière le <%= new Date(cmd.last_used_at).toLocaleString('fr-FR') %><% } %></p>
+                </div>
+                <div class="command-item-actions">
+                  <a href="/bots/<%= bot.id %>/commands/<%= cmd.id %>/edit" class="btn btn-ghost btn-sm">Modifier</a>
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/duplicate" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-sm">Dupliquer</button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/toggle" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-sm"><%= cmd.enabled ? 'Désactiver' : 'Activer' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/commands/<%= cmd.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer cette commande ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card logs-card">
+        <div class="card-header">
+          <h2>Logs en direct</h2>
+          <span class="pulse-dot" id="live-indicator" title="Connexion en direct"></span>
+        </div>
+        <div id="log-console" class="log-console" data-bot-id="<%= bot.id %>">
+          <% logs.forEach(l => { %>
+            <div class="log-line log-<%= l.level %>"><span class="log-time"><%= new Date(l.ts).toLocaleTimeString('fr-FR') %></span><%= l.message %></div>
+          <% }) %>
+          <% if (!logs.length) { %>
+            <div class="log-line log-info">Aucun log pour l'instant. Démarre le bot pour voir son activité ici.</div>
+          <% } %>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/bot.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Optionnel : HTTPS automatique avec un nom de domaine, via Caddy.
+#
+# 1. Pointe un enregistrement DNS A de ton domaine vers l'IP du VPS.
+# 2. Installe Caddy : https://caddyserver.com/docs/install (dépôt officiel apt)
+# 3. Copie ce fichier vers /etc/caddy/Caddyfile en remplaçant ton-domaine.com
+# 4. sudo systemctl restart caddy
+# 5. Dans .env, mets NODE_ENV=production puis redémarre le service djks-bots
+#    (Caddy termine le HTTPS et transmet en HTTP local ; Express reconnaît
+#    l'origine sécurisée via l'en-tête X-Forwarded-Proto grâce à
+#    `app.set('trust proxy', 1)`, déjà en place dans server.js).
+
+ton-domaine.com {
+	reverse_proxy localhost:3000
+}

@@ -1,0 +1,25 @@
+{
+  "name": "djks-discord-bot-manager",
+  "version": "1.0.0",
+  "description": "Site web pour créer et gérer des bots Discord sans écrire de code.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^13.0.3",
+    "better-sqlite3-session-store": "^0.1.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "express-session": "^1.18.1",
+    "groq-sdk": "^1.6.0",
+    "helmet": "^8.3.0"
+  }
+}
