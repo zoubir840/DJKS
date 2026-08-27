@@ -374,6 +374,10 @@ app.get('/bots/:id', requireAuth, (req, res) => {
   const topLevels = db.prepare('SELECT * FROM levels WHERE bot_id = ? ORDER BY xp DESC LIMIT 5').all(bot.id);
   const levelCount = db.prepare('SELECT COUNT(*) AS n FROM levels WHERE bot_id = ?').get(bot.id).n;
   const webhookUrl = bot.webhook_token ? `${req.protocol}://${req.get('host')}/webhook/${bot.webhook_token}` : null;
+  const warningCount = db.prepare('SELECT COUNT(*) AS n FROM warnings WHERE bot_id = ?').get(bot.id).n;
+  const recentWarnings = db
+    .prepare('SELECT * FROM warnings WHERE bot_id = ? ORDER BY created_at DESC LIMIT 5')
+    .all(bot.id);
   let maskedToken;
   try {
     maskedToken = maskToken(decrypt(bot.token_encrypted));
@@ -389,6 +393,8 @@ app.get('/bots/:id', requireAuth, (req, res) => {
     topLevels,
     levelCount,
     webhookUrl,
+    warningCount,
+    recentWarnings,
     aiConfigured: ai.isConfigured(),
     aiProviderLabel: ai.providerLabel(),
     aiUsageToday: bot.ai_usage_date === today ? bot.ai_usage_count : 0,
@@ -453,6 +459,37 @@ app.post('/bots/:id/moderation', requireAuth, (req, res) => {
   res.redirect(`/bots/${bot.id}`);
 });
 
+app.post('/bots/:id/warn-settings', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const threshold = Math.min(Math.max(parseInt(req.body.warn_action_threshold, 10) || 3, 1), 100);
+  const action = ['none', 'kick', 'ban'].includes(req.body.warn_action) ? req.body.warn_action : 'none';
+  db.prepare('UPDATE bots SET warn_action_threshold = ?, warn_action = ? WHERE id = ?').run(threshold, action, bot.id);
+  req.setFlash('success', 'Sanction automatique enregistrée.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/automod', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const words = String(req.body.banned_words || '')
+    .split(',')
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .join(', ');
+  const antispamEnabled = req.body.antispam_enabled ? 1 : 0;
+  const automodInvites = req.body.automod_invites ? 1 : 0;
+  const mentionsMax = Math.min(Math.max(parseInt(req.body.automod_mentions_max, 10) || 0, 0), 100);
+  const capsEnabled = req.body.automod_caps_enabled ? 1 : 0;
+  const capsThreshold = Math.min(Math.max(parseInt(req.body.automod_caps_threshold, 10) || 70, 10), 100);
+  db.prepare(
+    `UPDATE bots SET antispam_enabled = ?, banned_words = ?, automod_invites = ?, automod_mentions_max = ?,
+       automod_caps_enabled = ?, automod_caps_threshold = ? WHERE id = ?`
+  ).run(antispamEnabled, words, automodInvites, mentionsMax, capsEnabled, capsThreshold, bot.id);
+  req.setFlash('success', 'Auto-modération enregistrée.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
 app.post('/bots/:id/welcome', requireAuth, (req, res) => {
   const bot = loadOwnedBot(req, res);
   if (!bot) return;
@@ -492,20 +529,6 @@ app.post('/bots/:id/autorole', requireAuth, (req, res) => {
   const roleId = String(req.body.role_id || '').trim();
   db.prepare('UPDATE bots SET autorole_enabled = ?, autorole_role_id = ? WHERE id = ?').run(enabled, roleId || null, bot.id);
   req.setFlash('success', 'Rôle automatique enregistré.');
-  res.redirect(`/bots/${bot.id}`);
-});
-
-app.post('/bots/:id/antispam', requireAuth, (req, res) => {
-  const bot = loadOwnedBot(req, res);
-  if (!bot) return;
-  const enabled = req.body.enabled ? 1 : 0;
-  const words = String(req.body.banned_words || '')
-    .split(',')
-    .map((w) => w.trim())
-    .filter(Boolean)
-    .join(', ');
-  db.prepare('UPDATE bots SET antispam_enabled = ?, banned_words = ? WHERE id = ?').run(enabled, words, bot.id);
-  req.setFlash('success', 'Filtre anti-spam enregistré.');
   res.redirect(`/bots/${bot.id}`);
 });
 
@@ -870,7 +893,7 @@ function parseCommandFields(body, bot) {
   if (!/^[a-z0-9_-]+$/.test(trigger)) {
     return { error: 'Le déclencheur ne peut contenir que des lettres, chiffres, - et _.' };
   }
-  const reserved = ['help', 'kick', 'ban', 'clear', 'rank', 'leaderboard'];
+  const reserved = ['help', 'kick', 'ban', 'clear', 'warn', 'warnings', 'clearwarnings', 'mute', 'unmute', 'rank', 'leaderboard'];
   if (reserved.includes(trigger) || (bot.ai_enabled && trigger === (bot.ai_trigger || 'ai').toLowerCase())) {
     return { error: `"${trigger}" est réservé (aide, modération, niveaux ou assistant IA). Choisis un autre nom.` };
   }

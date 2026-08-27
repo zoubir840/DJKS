@@ -57,12 +57,13 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - **export / import** de tes commandes en JSON (sauvegarde, ou pour les recopier sur un autre bot)
 
 ### Fonctionnalités intégrées (activables en un clic)
-- 🛠️ **Modération** : `!kick`, `!ban`, `!clear`, avec vérification des permissions Discord de l'utilisateur et du bot avant chaque action
+- 🛠️ **Modération** : `!kick`, `!ban`, `!clear`, `!mute`/`!unmute` (timeout Discord natif), avec vérification des permissions Discord de l'utilisateur et du bot avant chaque action
+- ⚠️ **Avertissements** : `!warn`, `!warnings`, `!clearwarnings`, avec **sanction automatique** (expulsion ou bannissement) configurable après N avertissements
 - 👋 **Message de bienvenue** envoyé dans un salon au choix quand un membre rejoint
 - 🚪 **Message de départ** envoyé dans un salon au choix quand un membre part
 - 🎭 **Rôle automatique** attribué à chaque nouveau membre
-- 🚫 **Anti-spam / mots interdits** : suppression automatique des messages contenant un mot de la liste
-- 🧾 **Salon de logs de modération** : les actions (kick/ban/clear/anti-spam) sont journalisées sur Discord, pas seulement sur le site
+- 🛡️ **Auto-modération** : mots interdits, liens d'invitation Discord, spam de mentions, excès de MAJUSCULES — chaque filtre activable indépendamment, suppression automatique du message
+- 🧾 **Salon de logs de modération** : toutes les actions (kick/ban/clear/warn/mute/auto-modération) sont journalisées sur Discord, pas seulement sur le site
 - 🎛️ **Menus de rôles à boutons** : publie un message avec des boutons Discord — chaque membre clique pour obtenir ou retirer un rôle, sans réaction ni commande à taper. Gérable entièrement depuis le site (ajout/suppression de rôles, republication en un clic)
 - 🏆 **Système de niveaux (XP)** : les membres gagnent de l'XP en discutant (cooldown anti-farm configurable), `!rank` et `!leaderboard` intégrés, annonce de passage de niveau dans un salon au choix, classement visible et réinitialisable depuis le site
 - ⭐ **Starboard** : republie automatiquement un message dans un salon dédié dès qu'il atteint un nombre de réactions choisi (emoji et seuil configurables)

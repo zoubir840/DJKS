@@ -23,6 +23,7 @@ const MAX_LOG_LINES = 300;
 const AI_COOLDOWN_MS = 6000;
 const AI_DEFAULT_DAILY_LIMIT = 150;
 const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+const MODERATION_ACTIONS = ['kick', 'ban', 'clear', 'warn', 'warnings', 'clearwarnings', 'mute', 'unmute'];
 
 // --- Courbe de progression du système de niveaux (façon MEE6) ---
 function xpForLevel(level) {
@@ -209,6 +210,42 @@ class BotManager extends EventEmitter {
     return member.permissions?.has?.(PermissionFlagsBits.Administrator) || member.roles?.cache?.has?.(roleId);
   }
 
+  /**
+   * Vérifie un message contre les filtres d'auto-modération activés et
+   * retourne une courte raison (à afficher/journaliser) si le message doit
+   * être supprimé, sinon null.
+   */
+  _checkAutoMod(currentBot, message) {
+    if (currentBot.antispam_enabled && currentBot.banned_words) {
+      const words = currentBot.banned_words
+        .split(',')
+        .map((w) => w.trim().toLowerCase())
+        .filter(Boolean);
+      const contentLower = message.content.toLowerCase();
+      if (words.some((w) => contentLower.includes(w))) return 'mot interdit';
+    }
+
+    if (currentBot.automod_invites && /(discord\.gg|discord(?:app)?\.com\/invite)\/\S+/i.test(message.content)) {
+      return "lien d'invitation Discord";
+    }
+
+    if (currentBot.automod_mentions_max > 0) {
+      const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+      if (mentionCount > currentBot.automod_mentions_max) return 'trop de mentions';
+    }
+
+    if (currentBot.automod_caps_enabled) {
+      const letters = message.content.replace(/[^a-zA-ZÀ-ÿ]/g, '');
+      if (letters.length >= 10) {
+        const upper = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
+        const ratio = (upper / letters.length) * 100;
+        if (ratio >= (currentBot.automod_caps_threshold || 70)) return 'trop de majuscules';
+      }
+    }
+
+    return null;
+  }
+
   async _logToModChannel(botId, client, currentBot, text) {
     if (!currentBot.modlog_channel_id) return;
     try {
@@ -352,22 +389,15 @@ class BotManager extends EventEmitter {
         const currentBot = db.prepare('SELECT * FROM bots WHERE id = ?').get(botId);
         if (!currentBot) return;
 
-        // --- Anti-spam / mots interdits ---
-        if (currentBot.antispam_enabled && currentBot.banned_words) {
-          const words = currentBot.banned_words
-            .split(',')
-            .map((w) => w.trim().toLowerCase())
-            .filter(Boolean);
-          const contentLower = message.content.toLowerCase();
-          const hit = words.find((w) => contentLower.includes(w));
-          if (hit) {
-            await message.delete().catch(() => {});
-            const warn = await message.channel.send(`⚠️ ${message.author}, ce message a été supprimé (contenu interdit).`).catch(() => null);
-            if (warn) setTimeout(() => warn.delete().catch(() => {}), 5000);
-            this._log(botId, 'warn', `Message de ${message.author.tag} supprimé (anti-spam).`);
-            await this._logToModChannel(botId, client, currentBot, `🚫 Message de **${message.author.tag}** supprimé dans <#${message.channel.id}> (mot interdit).`);
-            return;
-          }
+        // --- Auto-modération : mots interdits, liens d'invitation, spam de mentions, majuscules ---
+        const automodReason = this._checkAutoMod(currentBot, message);
+        if (automodReason) {
+          await message.delete().catch(() => {});
+          const warn = await message.channel.send(`⚠️ ${message.author}, ton message a été supprimé (${automodReason}).`).catch(() => null);
+          if (warn) setTimeout(() => warn.delete().catch(() => {}), 5000);
+          this._log(botId, 'warn', `Message de ${message.author.tag} supprimé (${automodReason}).`);
+          await this._logToModChannel(botId, client, currentBot, `🚫 Message de **${message.author.tag}** supprimé dans <#${message.channel.id}> (${automodReason}).`);
+          return;
         }
 
         // --- Système de niveaux (XP par message, avec cooldown) ---
@@ -412,6 +442,11 @@ class BotManager extends EventEmitter {
             lines.push(`**${prefix}kick** @membre [raison] — Expulse un membre`);
             lines.push(`**${prefix}ban** @membre [raison] — Bannit un membre`);
             lines.push(`**${prefix}clear** [nombre] — Supprime des messages (défaut 10)`);
+            lines.push(`**${prefix}warn** @membre [raison] — Avertit un membre`);
+            lines.push(`**${prefix}warnings** [@membre] — Liste les avertissements`);
+            lines.push(`**${prefix}clearwarnings** @membre — Réinitialise les avertissements`);
+            lines.push(`**${prefix}mute** @membre [minutes] [raison] — Réduit un membre au silence`);
+            lines.push(`**${prefix}unmute** @membre — Lève la sourdine`);
           }
           if (currentBot.ai_enabled) {
             lines.push(`**${prefix}${currentBot.ai_trigger || 'ai'}** <message> — Discute avec l'assistant IA (ou mentionne-moi)`);
@@ -424,7 +459,7 @@ class BotManager extends EventEmitter {
           return;
         }
 
-        if (currentBot.moderation_enabled && ['kick', 'ban', 'clear'].includes(trigger)) {
+        if (currentBot.moderation_enabled && MODERATION_ACTIONS.includes(trigger)) {
           await this._handleModeration(botId, trigger, message, rest, currentBot, client);
           return;
         }
@@ -876,12 +911,41 @@ class BotManager extends EventEmitter {
     return true;
   }
 
+  _moderationPermFor(action) {
+    if (action === 'kick') return PermissionFlagsBits.KickMembers;
+    if (action === 'ban') return PermissionFlagsBits.BanMembers;
+    if (action === 'clear') return PermissionFlagsBits.ManageMessages;
+    // warn, warnings (avec cible), clearwarnings, mute, unmute
+    return PermissionFlagsBits.ModerateMembers;
+  }
+
+  async _showWarnings(botId, message, targetUser) {
+    const rows = db
+      .prepare('SELECT * FROM warnings WHERE bot_id = ? AND discord_user_id = ? ORDER BY created_at DESC LIMIT 10')
+      .all(botId, targetUser.id);
+    if (!rows.length) {
+      await message.reply(`**${targetUser.tag}** n'a aucun avertissement.`);
+      return;
+    }
+    const lines = rows.map((w, i) => `${i + 1}. ${w.reason} — par ${w.moderator_tag} (${new Date(w.created_at).toLocaleDateString('fr-FR')})`);
+    const embed = new EmbedBuilder()
+      .setColor('#f0b232')
+      .setTitle(`⚠️ Avertissements de ${targetUser.tag} (${rows.length})`)
+      .setDescription(lines.join('\n'));
+    await message.reply({ embeds: [embed] });
+  }
+
   async _handleModeration(botId, action, message, args, currentBot, client) {
     const target = message.mentions.members?.first();
     const reason = args.slice(1).join(' ') || 'Aucune raison fournie';
 
-    const requiredPerm =
-      action === 'kick' ? PermissionFlagsBits.KickMembers : action === 'ban' ? PermissionFlagsBits.BanMembers : PermissionFlagsBits.ManageMessages;
+    // Consulter ses propres avertissements ne nécessite aucune permission particulière.
+    if (action === 'warnings' && !target) {
+      await this._showWarnings(botId, message, message.author);
+      return;
+    }
+
+    const requiredPerm = this._moderationPermFor(action);
 
     if (!message.member.permissions.has(requiredPerm)) {
       await message.reply("🚫 Tu n'as pas la permission d'utiliser cette commande.");
@@ -903,10 +967,78 @@ class BotManager extends EventEmitter {
         return;
       }
 
-      if (!target) {
-        await message.reply('Mentionne le membre concerné, ex : `kick @membre raison`.');
+      if (action === 'warnings') {
+        await this._showWarnings(botId, message, target.user);
         return;
       }
+
+      if (!target) {
+        await message.reply(`Mentionne le membre concerné, ex : \`${action} @membre raison\`.`);
+        return;
+      }
+
+      if (action === 'warn') {
+        db.prepare('INSERT INTO warnings (bot_id, discord_user_id, username, moderator_tag, reason) VALUES (?, ?, ?, ?, ?)').run(
+          botId,
+          target.id,
+          target.user.username,
+          message.author.tag,
+          reason
+        );
+        const count = db.prepare('SELECT COUNT(*) AS n FROM warnings WHERE bot_id = ? AND discord_user_id = ?').get(botId, target.id).n;
+        const threshold = currentBot.warn_action_threshold || 3;
+        await message.reply(`⚠️ **${target.user.tag}** a été averti (${count}/${threshold}). Raison : ${reason}`);
+        await this._logToModChannel(
+          botId,
+          client,
+          currentBot,
+          `⚠️ **${target.user.tag}** averti par **${message.author.tag}** (${count}/${threshold}). Raison : ${reason}`
+        );
+        this._log(botId, 'info', `${message.author.tag} a averti ${target.user.tag} (${count}/${threshold}).`);
+
+        if (currentBot.warn_action !== 'none' && count >= threshold) {
+          try {
+            if (currentBot.warn_action === 'kick') await target.kick("Seuil d'avertissements atteint");
+            else if (currentBot.warn_action === 'ban') await target.ban({ reason: "Seuil d'avertissements atteint" });
+            db.prepare('DELETE FROM warnings WHERE bot_id = ? AND discord_user_id = ?').run(botId, target.id);
+            const actionLabel = currentBot.warn_action === 'kick' ? 'expulsé' : 'banni';
+            await message.channel.send(`🔨 **${target.user.tag}** a atteint le seuil d'avertissements et a été ${actionLabel} automatiquement.`);
+            await this._logToModChannel(botId, client, currentBot, `🔨 **${target.user.tag}** ${actionLabel} automatiquement (seuil d'avertissements atteint).`);
+          } catch (err) {
+            this._log(botId, 'error', `Échec de l'action automatique sur avertissement : ${err.message}`);
+          }
+        }
+        return;
+      }
+
+      if (action === 'clearwarnings') {
+        db.prepare('DELETE FROM warnings WHERE bot_id = ? AND discord_user_id = ?').run(botId, target.id);
+        await message.reply(`✅ Avertissements de **${target.user.tag}** réinitialisés.`);
+        this._log(botId, 'info', `${message.author.tag} a réinitialisé les avertissements de ${target.user.tag}.`);
+        return;
+      }
+
+      if (action === 'mute') {
+        const minutes = Math.min(Math.max(parseInt(args[0], 10) || 10, 1), 40320); // 28 jours = limite Discord
+        await target.timeout(minutes * 60 * 1000, reason);
+        await message.reply(`🔇 **${target.user.tag}** est réduit au silence pendant ${minutes} minute(s). Raison : ${reason}`);
+        await this._logToModChannel(
+          botId,
+          client,
+          currentBot,
+          `🔇 **${target.user.tag}** mis en sourdine ${minutes}min par **${message.author.tag}**. Raison : ${reason}`
+        );
+        this._log(botId, 'info', `${message.author.tag} a mis en sourdine ${target.user.tag} (${minutes}min).`);
+        return;
+      }
+
+      if (action === 'unmute') {
+        await target.timeout(null);
+        await message.reply(`🔊 **${target.user.tag}** n'est plus en sourdine.`);
+        this._log(botId, 'info', `${message.author.tag} a levé la sourdine de ${target.user.tag}.`);
+        return;
+      }
+
       if (action === 'kick') {
         await target.kick(reason);
         await message.reply(`👢 **${target.user.tag}** a été expulsé. Raison : ${reason}`);

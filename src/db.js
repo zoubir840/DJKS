@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS bots (
   webhook_token TEXT,
   webhook_channel_id TEXT,
   webhook_template TEXT NOT NULL DEFAULT '📢 {message}',
+  warn_action_threshold INTEGER NOT NULL DEFAULT 3,
+  warn_action TEXT NOT NULL DEFAULT 'none',
+  automod_invites INTEGER NOT NULL DEFAULT 0,
+  automod_mentions_max INTEGER NOT NULL DEFAULT 0,
+  automod_caps_enabled INTEGER NOT NULL DEFAULT 0,
+  automod_caps_threshold INTEGER NOT NULL DEFAULT 70,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -142,7 +148,18 @@ CREATE TABLE IF NOT EXISTS poll_options (
   position INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS warnings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  discord_user_id TEXT NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
+  moderator_tag TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_bots_user ON bots(user_id);
+CREATE INDEX IF NOT EXISTS idx_warnings_bot_user ON warnings(bot_id, discord_user_id);
 CREATE INDEX IF NOT EXISTS idx_commands_bot ON commands(bot_id);
 CREATE INDEX IF NOT EXISTS idx_role_menus_bot ON role_menus(bot_id);
 CREATE INDEX IF NOT EXISTS idx_role_menu_options_menu ON role_menu_options(role_menu_id);
@@ -204,5 +221,11 @@ ensureColumn('bots', 'webhook_token', 'TEXT');
 ensureColumn('bots', 'webhook_channel_id', 'TEXT');
 ensureColumn('bots', 'webhook_template', "TEXT NOT NULL DEFAULT '📢 {message}'");
 ensureColumn('commands', 'match_anywhere', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'warn_action_threshold', 'INTEGER NOT NULL DEFAULT 3');
+ensureColumn('bots', 'warn_action', "TEXT NOT NULL DEFAULT 'none'");
+ensureColumn('bots', 'automod_invites', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'automod_mentions_max', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'automod_caps_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bots', 'automod_caps_threshold', 'INTEGER NOT NULL DEFAULT 70');
 
 module.exports = db;

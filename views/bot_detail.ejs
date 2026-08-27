@@ -101,10 +101,37 @@
           </form>
         </div>
         <p class="hint" style="margin-top:0;">
-          Ajoute automatiquement <code><%= bot.prefix %>kick</code>, <code><%= bot.prefix %>ban</code> et
-          <code><%= bot.prefix %>clear</code>. Chaque commande vérifie les permissions Discord de la personne
-          qui l'utilise ainsi que celles du bot avant d'agir.
+          Ajoute automatiquement <code><%= bot.prefix %>kick</code>, <code><%= bot.prefix %>ban</code>,
+          <code><%= bot.prefix %>clear</code>, <code><%= bot.prefix %>warn</code>, <code><%= bot.prefix %>warnings</code>,
+          <code><%= bot.prefix %>clearwarnings</code>, <code><%= bot.prefix %>mute</code> et <code><%= bot.prefix %>unmute</code>.
+          Chaque commande vérifie les permissions Discord de la personne qui l'utilise ainsi que celles du bot avant d'agir.
         </p>
+        <% if (bot.moderation_enabled) { %>
+          <form method="post" action="/bots/<%= bot.id %>/warn-settings" class="settings-form" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+            <%- include('partials/csrf') %>
+            <p class="hint" style="margin-top:0;">Sanction automatique après un certain nombre d'avertissements (<%= warningCount %> au total sur ce bot) :</p>
+            <div class="command-form-row">
+              <label>Seuil d'avertissements
+                <input type="number" name="warn_action_threshold" min="1" max="100" value="<%= bot.warn_action_threshold %>" />
+              </label>
+              <label>Sanction automatique
+                <select name="warn_action">
+                  <option value="none" <%= bot.warn_action === 'none' ? 'selected' : '' %>>Aucune (juste suivi)</option>
+                  <option value="kick" <%= bot.warn_action === 'kick' ? 'selected' : '' %>>Expulser</option>
+                  <option value="ban" <%= bot.warn_action === 'ban' ? 'selected' : '' %>>Bannir</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Enregistrer</button>
+          </form>
+          <% if (recentWarnings.length) { %>
+            <ul class="role-menu-options" style="margin-top:12px;">
+              <% recentWarnings.forEach(w => { %>
+                <li class="role-chip" title="<%= w.reason %>"><%= w.username %> — <%= w.reason %></li>
+              <% }) %>
+            </ul>
+          <% } %>
+        <% } %>
       </section>
 
       <section class="card">
@@ -122,14 +149,28 @@
       </section>
 
       <section class="card">
-        <div class="card-header"><h2>Anti-spam / mots interdits</h2></div>
-        <form method="post" action="/bots/<%= bot.id %>/antispam" class="settings-form">
+        <div class="card-header"><h2>🛡️ Auto-modération</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/automod" class="settings-form">
           <%- include('partials/csrf') %>
           <label class="checkbox-label">
-            <input type="checkbox" name="enabled" <%= bot.antispam_enabled ? 'checked' : '' %> /> Supprimer automatiquement les messages contenant un mot interdit
+            <input type="checkbox" name="antispam_enabled" <%= bot.antispam_enabled ? 'checked' : '' %> /> Supprimer les messages contenant un mot interdit
           </label>
           <label>Mots interdits (séparés par des virgules)
             <input type="text" name="banned_words" value="<%= bot.banned_words %>" placeholder="mot1, mot2, expression interdite" />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" name="automod_invites" <%= bot.automod_invites ? 'checked' : '' %> /> Supprimer les liens d'invitation Discord
+          </label>
+          <div class="command-form-row">
+            <label>Max mentions par message (0 = désactivé)
+              <input type="number" name="automod_mentions_max" min="0" max="100" value="<%= bot.automod_mentions_max %>" />
+            </label>
+            <label>Seuil de majuscules (%)
+              <input type="number" name="automod_caps_threshold" min="10" max="100" value="<%= bot.automod_caps_threshold %>" />
+            </label>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" name="automod_caps_enabled" <%= bot.automod_caps_enabled ? 'checked' : '' %> /> Supprimer les messages avec trop de MAJUSCULES
           </label>
           <button type="submit" class="btn btn-secondary">Enregistrer</button>
         </form>
