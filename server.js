@@ -378,6 +378,8 @@ app.get('/bots/:id', requireAuth, (req, res) => {
   const recentWarnings = db
     .prepare('SELECT * FROM warnings WHERE bot_id = ? ORDER BY created_at DESC LIMIT 5')
     .all(bot.id);
+  const announcements = db.prepare('SELECT * FROM announcements WHERE bot_id = ? ORDER BY created_at DESC').all(bot.id);
+  const giveaways = db.prepare('SELECT * FROM giveaways WHERE bot_id = ? ORDER BY created_at DESC').all(bot.id);
   let maskedToken;
   try {
     maskedToken = maskToken(decrypt(bot.token_encrypted));
@@ -395,6 +397,8 @@ app.get('/bots/:id', requireAuth, (req, res) => {
     webhookUrl,
     warningCount,
     recentWarnings,
+    announcements,
+    giveaways,
     aiConfigured: ai.isConfigured(),
     aiProviderLabel: ai.providerLabel(),
     aiUsageToday: bot.ai_usage_date === today ? bot.ai_usage_count : 0,
@@ -687,6 +691,144 @@ app.post('/bots/:id/polls/:pid/delete', requireAuth, (req, res) => {
   if (!poll) return;
   db.prepare('DELETE FROM polls WHERE id = ?').run(poll.id);
   req.setFlash('success', 'Sondage supprimé (le message Discord existant reste affiché).');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+// --------------------------------------------------------------------------
+// Annonces programmées
+// --------------------------------------------------------------------------
+
+function loadOwnedAnnouncement(req, res, bot) {
+  const a = db.prepare('SELECT * FROM announcements WHERE id = ? AND bot_id = ?').get(req.params.aid, bot.id);
+  if (!a) {
+    res.status(404).end();
+    return null;
+  }
+  return a;
+}
+
+app.post('/bots/:id/announcements', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const channelId = String(req.body.channel_id || '').trim();
+  const message = String(req.body.message || '').trim();
+  const intervalMinutes = Math.min(Math.max(parseInt(req.body.interval_minutes, 10) || 1440, 5), 10080);
+
+  if (!channelId || !message) {
+    req.setFlash('error', 'Le salon et le message sont obligatoires.');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+
+  const nextRunAt = new Date(Date.now() + intervalMinutes * 60000).toISOString();
+  db.prepare('INSERT INTO announcements (bot_id, channel_id, message, interval_minutes, next_run_at) VALUES (?, ?, ?, ?, ?)').run(
+    bot.id,
+    channelId,
+    message,
+    intervalMinutes,
+    nextRunAt
+  );
+  req.setFlash('success', `Annonce programmée créée. Premier envoi dans ${intervalMinutes} minute(s) (le bot doit être en ligne).`);
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/announcements/:aid/toggle', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const a = loadOwnedAnnouncement(req, res, bot);
+  if (!a) return;
+  const enabled = a.enabled ? 0 : 1;
+  const nextRunAt = enabled ? new Date(Date.now() + a.interval_minutes * 60000).toISOString() : a.next_run_at;
+  db.prepare('UPDATE announcements SET enabled = ?, next_run_at = ? WHERE id = ?').run(enabled, nextRunAt, a.id);
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/announcements/:aid/delete', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const a = loadOwnedAnnouncement(req, res, bot);
+  if (!a) return;
+  db.prepare('DELETE FROM announcements WHERE id = ?').run(a.id);
+  req.setFlash('success', 'Annonce programmée supprimée.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+// --------------------------------------------------------------------------
+// Giveaways
+// --------------------------------------------------------------------------
+
+function loadOwnedGiveaway(req, res, bot) {
+  const g = db.prepare('SELECT * FROM giveaways WHERE id = ? AND bot_id = ?').get(req.params.gid, bot.id);
+  if (!g) {
+    res.status(404).end();
+    return null;
+  }
+  return g;
+}
+
+app.post('/bots/:id/giveaways', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const channelId = String(req.body.channel_id || '').trim();
+  const prize = String(req.body.prize || '').trim();
+  const winnerCount = Math.min(Math.max(parseInt(req.body.winner_count, 10) || 1, 1), 20);
+  const durationMinutes = Math.min(Math.max(parseInt(req.body.duration_minutes, 10) || 60, 1), 43200);
+
+  if (!channelId || !prize) {
+    req.setFlash('error', 'Le salon et le lot sont obligatoires.');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+
+  const endsAt = new Date(Date.now() + durationMinutes * 60000).toISOString();
+  db.prepare('INSERT INTO giveaways (bot_id, channel_id, prize, winner_count, ends_at) VALUES (?, ?, ?, ?, ?)').run(
+    bot.id,
+    channelId,
+    prize,
+    winnerCount,
+    endsAt
+  );
+  req.setFlash('success', 'Giveaway créé. Publie-le pour lancer la participation.');
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/giveaways/:gid/publish', requireAuth, async (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const g = loadOwnedGiveaway(req, res, bot);
+  if (!g) return;
+  try {
+    await botManager.publishGiveaway(bot.id, g.id);
+    req.setFlash('success', 'Giveaway publié sur Discord.');
+  } catch (err) {
+    req.setFlash('error', err.message);
+  }
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/giveaways/:gid/end', requireAuth, async (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const g = loadOwnedGiveaway(req, res, bot);
+  if (!g) return;
+  if (g.ended) {
+    req.setFlash('error', 'Ce giveaway est déjà terminé.');
+    return res.redirect(`/bots/${bot.id}`);
+  }
+  try {
+    await botManager.endGiveaway(g);
+    req.setFlash('success', 'Giveaway clôturé, gagnant(s) annoncé(s) sur Discord.');
+  } catch (err) {
+    req.setFlash('error', err.message);
+  }
+  res.redirect(`/bots/${bot.id}`);
+});
+
+app.post('/bots/:id/giveaways/:gid/delete', requireAuth, (req, res) => {
+  const bot = loadOwnedBot(req, res);
+  if (!bot) return;
+  const g = loadOwnedGiveaway(req, res, bot);
+  if (!g) return;
+  db.prepare('DELETE FROM giveaways WHERE id = ?').run(g.id);
+  req.setFlash('success', 'Giveaway supprimé.');
   res.redirect(`/bots/${bot.id}`);
 });
 

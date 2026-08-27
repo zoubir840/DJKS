@@ -158,6 +158,29 @@ CREATE TABLE IF NOT EXISTS warnings (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL,
+  message TEXT NOT NULL,
+  interval_minutes INTEGER NOT NULL DEFAULT 1440,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_run_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS giveaways (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  channel_id TEXT NOT NULL,
+  message_id TEXT,
+  prize TEXT NOT NULL,
+  winner_count INTEGER NOT NULL DEFAULT 1,
+  ends_at TEXT NOT NULL,
+  ended INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_bots_user ON bots(user_id);
 CREATE INDEX IF NOT EXISTS idx_warnings_bot_user ON warnings(bot_id, discord_user_id);
 CREATE INDEX IF NOT EXISTS idx_commands_bot ON commands(bot_id);
@@ -166,6 +189,10 @@ CREATE INDEX IF NOT EXISTS idx_role_menu_options_menu ON role_menu_options(role_
 CREATE INDEX IF NOT EXISTS idx_levels_bot ON levels(bot_id);
 CREATE INDEX IF NOT EXISTS idx_polls_bot ON polls(bot_id);
 CREATE INDEX IF NOT EXISTS idx_poll_options_poll ON poll_options(poll_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_bot ON announcements(bot_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_due ON announcements(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_giveaways_bot ON giveaways(bot_id);
+CREATE INDEX IF NOT EXISTS idx_giveaways_due ON giveaways(ended, ends_at);
 `);
 
 // --- Migration "à la volée" pour les bases créées par une version antérieure ---

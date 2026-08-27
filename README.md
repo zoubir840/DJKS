@@ -70,6 +70,8 @@ discuter directement avec tes membres, sur mesure pour ton serveur.
 - 📊 **Sondages** : crée une question à choix multiples (2 à 10 options) depuis le site, publie-la en un clic — le bot poste l'embed et réagit avec les emojis numérotés
 - 🔌 **Webhooks entrants** : génère un lien unique par bot ; un simple appel HTTP POST (JSON) depuis un autre service (GitHub, IFTTT, un script maison…) poste un message dans le salon de ton choix, avec un modèle personnalisable (`{message}`, `{title}`, `{url}`, `{json}`)
 - 🔎 **Commandes « mot-clé »** : en plus des commandes à préfixe classiques, une commande peut se déclencher dès que son mot apparaît n'importe où dans un message, sans préfixe
+- 📅 **Annonces programmées** : un message envoyé automatiquement à intervalle régulier dans un salon, activable/désactivable, sans rien coder
+- 🎁 **Giveaways** : crée un concours (lot, nombre de gagnants, durée), publie-le en un clic — le bot poste l'embed, gère la participation par réaction 🎉 et tire au sort le(s) gagnant(s) automatiquement à la fin (ou immédiatement depuis le site)
 
 ## Démarrage rapide (local)
 

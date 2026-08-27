@@ -112,6 +112,37 @@ class BotManager extends EventEmitter {
     this.setMaxListeners(0);
     /** @type {Map<number, {client: Client, logs: Array, cooldowns: Map, aiHistory: Map}>} */
     this.instances = new Map();
+    // Planificateur en arrière-plan : annonces programmées + clôture des giveaways.
+    setInterval(() => {
+      this._tickScheduler().catch((err) => console.error('[scheduler]', err));
+    }, 60 * 1000);
+  }
+
+  async _tickScheduler() {
+    const now = new Date().toISOString();
+
+    const dueAnnouncements = db.prepare('SELECT * FROM announcements WHERE enabled = 1 AND next_run_at <= ?').all(now);
+    for (const a of dueAnnouncements) {
+      if (!this.instances.has(a.bot_id)) continue; // bot hors ligne : on retentera au prochain tick
+      try {
+        await this.sendToChannel(a.bot_id, a.channel_id, a.message);
+        const next = new Date(Date.now() + a.interval_minutes * 60000).toISOString();
+        db.prepare('UPDATE announcements SET next_run_at = ? WHERE id = ?').run(next, a.id);
+        this._log(a.bot_id, 'success', `Annonce programmée envoyée dans <#${a.channel_id}>.`);
+      } catch (err) {
+        this._log(a.bot_id, 'error', `Échec de l'annonce programmée : ${err.message}`);
+      }
+    }
+
+    const dueGiveaways = db.prepare('SELECT * FROM giveaways WHERE ended = 0 AND ends_at <= ?').all(now);
+    for (const g of dueGiveaways) {
+      if (!this.instances.has(g.bot_id)) continue;
+      try {
+        await this.endGiveaway(g);
+      } catch (err) {
+        this._log(g.bot_id, 'error', `Échec de clôture du giveaway : ${err.message}`);
+      }
+    }
   }
 
   isRunning(botId) {
@@ -867,6 +898,74 @@ class BotManager extends EventEmitter {
 
     this._log(botId, 'success', `Sondage "${poll.question}" publié dans <#${poll.channel_id}>.`);
     return { ok: true, messageId };
+  }
+
+  /** Publie un giveaway sur Discord (embed + réaction 🎉). */
+  async publishGiveaway(botId, giveawayId) {
+    botId = Number(botId);
+    const inst = this.instances.get(botId);
+    if (!inst || !inst.client.isReady()) throw new Error('Démarre le bot avant de publier un giveaway.');
+
+    const giveaway = db.prepare('SELECT * FROM giveaways WHERE id = ? AND bot_id = ?').get(giveawayId, botId);
+    if (!giveaway) throw new Error('Giveaway introuvable.');
+    if (giveaway.message_id) throw new Error('Ce giveaway est déjà publié.');
+    if (giveaway.ended) throw new Error('Ce giveaway est déjà terminé.');
+
+    const channel = await inst.client.channels.fetch(giveaway.channel_id).catch(() => null);
+    if (!channel || !channel.isTextBased()) throw new Error('Salon introuvable ou non textuel.');
+
+    const endsUnix = Math.floor(new Date(giveaway.ends_at).getTime() / 1000);
+    const embed = new EmbedBuilder()
+      .setColor('#f0b232')
+      .setTitle('🎉 Giveaway !')
+      .setDescription(
+        `**${giveaway.prize}**\n\nRéagis avec 🎉 pour participer !\n${giveaway.winner_count} gagnant(s) · se termine <t:${endsUnix}:R>`
+      );
+
+    const sent = await channel.send({ embeds: [embed] });
+    await sent.react('🎉').catch(() => {});
+    db.prepare('UPDATE giveaways SET message_id = ? WHERE id = ?').run(sent.id, giveaway.id);
+
+    this._log(botId, 'success', `Giveaway "${giveaway.prize}" publié dans <#${giveaway.channel_id}>.`);
+    return { ok: true, messageId: sent.id };
+  }
+
+  /** Tire au sort et annonce le(s) gagnant(s) d'un giveaway, puis le marque terminé. */
+  async endGiveaway(giveaway) {
+    const botId = Number(giveaway.bot_id);
+    const inst = this.instances.get(botId);
+    if (!inst || !inst.client.isReady()) throw new Error('Le bot est hors ligne, impossible de clôturer ce giveaway.');
+
+    const channel = await inst.client.channels.fetch(giveaway.channel_id).catch(() => null);
+    let winners = [];
+
+    if (channel && channel.isTextBased() && giveaway.message_id) {
+      const msg = await channel.messages.fetch(giveaway.message_id).catch(() => null);
+      const reaction = msg?.reactions.cache.get('🎉');
+      if (reaction) {
+        const users = await reaction.users.fetch();
+        const eligible = Array.from(users.values()).filter((u) => !u.bot);
+        for (let i = eligible.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
+        }
+        winners = eligible.slice(0, giveaway.winner_count);
+      }
+    }
+
+    db.prepare('UPDATE giveaways SET ended = 1 WHERE id = ?').run(giveaway.id);
+
+    if (channel && channel.isTextBased()) {
+      if (!winners.length) {
+        await channel.send(`🎉 Le giveaway pour **${giveaway.prize}** est terminé, mais personne n'a participé.`);
+      } else {
+        const mentions = winners.map((u) => `<@${u.id}>`).join(', ');
+        await channel.send(`🎉 Félicitations ${mentions} ! Tu remportes **${giveaway.prize}** !`);
+      }
+    }
+
+    this._log(botId, 'success', `Giveaway "${giveaway.prize}" clôturé (${winners.length} gagnant(s)).`);
+    return { ok: true, winnerCount: winners.length };
   }
 
   /**

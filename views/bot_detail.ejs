@@ -455,6 +455,107 @@
         <% } %>
       </section>
 
+      <section class="card">
+        <div class="card-header"><h2>📅 Annonces programmées</h2></div>
+        <p class="hint" style="margin-top:0;">Envoie un message automatiquement, à intervalle régulier (le bot doit être en ligne au moment de l'envoi).</p>
+        <form method="post" action="/bots/<%= bot.id %>/announcements" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Toutes les (minutes)
+              <input type="number" name="interval_minutes" min="5" max="10080" value="1440" />
+            </label>
+          </div>
+          <label>Message
+            <textarea name="message" rows="2" required placeholder="N'oubliez pas notre event du vendredi !"></textarea>
+          </label>
+          <button type="submit" class="btn btn-secondary">+ Créer l'annonce</button>
+        </form>
+        <% if (announcements.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% announcements.forEach(a => { %>
+              <li class="command-item <%= a.enabled ? '' : 'command-disabled' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix">toutes les <%= a.interval_minutes %> min</span>
+                  <p class="command-response">Salon <code>#<%= a.channel_id %></code> — <%= a.message %></p>
+                  <p class="command-uses"><% if (a.enabled) { %>Prochain envoi : <%= new Date(a.next_run_at).toLocaleString('fr-FR') %><% } else { %>En pause<% } %></p>
+                </div>
+                <div class="command-item-actions">
+                  <form method="post" action="/bots/<%= bot.id %>/announcements/<%= a.id %>/toggle" class="inline-form">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-sm"><%= a.enabled ? 'Mettre en pause' : 'Reprendre' %></button>
+                  </form>
+                  <form method="post" action="/bots/<%= bot.id %>/announcements/<%= a.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer cette annonce programmée ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h2>🎁 Giveaways</h2></div>
+        <form method="post" action="/bots/<%= bot.id %>/giveaways" class="settings-form">
+          <%- include('partials/csrf') %>
+          <div class="command-form-row">
+            <label>Salon
+              <input type="text" name="channel_id" required placeholder="ID du salon" />
+            </label>
+            <label>Lot à gagner
+              <input type="text" name="prize" required placeholder="Un abonnement Nitro" />
+            </label>
+          </div>
+          <div class="command-form-row">
+            <label>Nombre de gagnants
+              <input type="number" name="winner_count" min="1" max="20" value="1" />
+            </label>
+            <label>Durée (minutes)
+              <input type="number" name="duration_minutes" min="1" max="43200" value="60" />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-secondary">+ Créer le giveaway</button>
+        </form>
+        <% if (giveaways.length) { %>
+          <ul class="command-list" style="margin-top:16px;">
+            <% giveaways.forEach(g => { %>
+              <li class="command-item <%= g.ended ? 'command-disabled' : '' %>">
+                <div class="command-item-main">
+                  <span class="command-badge command-badge-prefix"><%= g.prize %></span>
+                  <% if (g.message_id) { %><span class="command-badge command-badge-embed">publié</span><% } %>
+                  <% if (g.ended) { %><span class="command-badge command-badge-cooldown">terminé</span><% } %>
+                  <p class="command-response">Salon <code>#<%= g.channel_id %></code> — <%= g.winner_count %> gagnant(s)</p>
+                  <p class="command-uses"><% if (!g.ended) { %>Se termine le <%= new Date(g.ends_at).toLocaleString('fr-FR') %><% } %></p>
+                </div>
+                <div class="command-item-actions">
+                  <% if (!g.ended) { %>
+                    <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/publish" class="inline-form">
+                      <%- include('partials/csrf') %>
+                      <button type="submit" class="btn btn-primary btn-sm" <%= g.message_id ? 'disabled' : '' %>>Publier</button>
+                    </form>
+                    <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/end" class="inline-form"
+                          onsubmit="return confirm('Terminer ce giveaway maintenant et tirer un gagnant ?');">
+                      <%- include('partials/csrf') %>
+                      <button type="submit" class="btn btn-ghost btn-sm">Terminer maintenant</button>
+                    </form>
+                  <% } %>
+                  <form method="post" action="/bots/<%= bot.id %>/giveaways/<%= g.id %>/delete" class="inline-form"
+                        onsubmit="return confirm('Supprimer ce giveaway ?');">
+                    <%- include('partials/csrf') %>
+                    <button type="submit" class="btn btn-ghost btn-danger-text btn-sm">Supprimer</button>
+                  </form>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+      </section>
+
       <section class="card command-card">
         <div class="card-header">
           <h2>Commandes (<%= commands.length %>)</h2>
